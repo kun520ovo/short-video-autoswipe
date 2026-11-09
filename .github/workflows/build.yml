@@ -1,0 +1,131 @@
+name: Build and Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      JAVA_VERSION: '27'
+      ANDROID_PLATFORM: android-37.2
+      BUILD_TOOLS_VERSION: '37.0.0'
+      JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8 --enable-native-access=ALL-UNNAMED
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          packages: platform-tools platforms;${{ env.ANDROID_PLATFORM }} build-tools;${{ env.BUILD_TOOLS_VERSION }}
+
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+        with:
+          cache-provider: basic
+          validate-wrappers: true
+
+      - name: Prepare release signing
+        env:
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+          names = ("KEYSTORE", "KEYSTORE_PASSWORD", "KEY_ALIAS", "KEY_PASSWORD")
+          missing = [name for name in names if not os.environ.get(name)]
+          if missing:
+              raise SystemExit("Missing signing Secrets: " + ", ".join(missing))
+          keystore = base64.b64decode("".join(os.environ["KEYSTORE"].split()), validate=True)
+          if not keystore:
+              raise SystemExit("Signing keystore is empty")
+          os.umask(0o077)
+          Path("keystore.jks").write_bytes(keystore)
+          properties = ["KEYSTORE_FILE=keystore.jks"]
+          for name in names[1:]:
+              value = os.environ[name].encode("utf-16-be")
+              escaped = "".join("\\u" + value[i:i + 2].hex() for i in range(0, len(value), 2))
+              properties.append(name + "=" + escaped)
+          Path("signing.properties").write_text("\n".join(properties) + "\n", encoding="ascii")
+          PY
+
+      - name: Test, lint and build the release APK
+        run: >-
+          bash ./gradlew :app:testReleaseUnitTest :app:lintRelease :app:assembleRelease
+          --no-daemon --console=plain --max-workers=2
+          -Pkotlin.compiler.execution.strategy=in-process
+
+      - name: Verify release APK
+        id: release
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess, zipfile
+          from pathlib import Path
+          output = Path("app/build/outputs/apk/release")
+          metadata = json.loads((output / "output-metadata.json").read_text(encoding="utf-8"))
+          [element] = metadata["elements"]
+          version = element["versionName"]
+          apk = output / element["outputFile"]
+          if apk.name != f"短视频挂机-{version}.apk" or list(output.glob("*.apk")) != [apk]:
+              raise SystemExit("Expected exactly one release APK with the project version")
+          tag = "v" + version
+          subprocess.run(["git", "check-ref-format", "refs/tags/" + tag], check=True)
+          if os.environ["GITHUB_REF_TYPE"] == "tag" and os.environ["GITHUB_REF_NAME"] != tag:
+              raise SystemExit("The pushed tag must match " + tag)
+          tools = Path(os.environ["ANDROID_HOME"]) / "build-tools" / os.environ["BUILD_TOOLS_VERSION"]
+          subprocess.run([str(tools / "apksigner"), "verify", "--verbose", str(apk)], check=True)
+          subprocess.run([str(tools / "zipalign"), "-c", "-P", "16", "4", str(apk)], check=True)
+          with zipfile.ZipFile(apk) as archive:
+              apache = archive.read("META-INF/androidx/annotation/annotation/LICENSE.txt").decode("utf-8")
+              expected = Path("LICENSE").read_text(encoding="utf-8").partition("APPENDIX:")[0]
+              if apache.split() != expected.split():
+                  raise SystemExit("Bundled Apache license terms do not match LICENSE")
+              notice = "META-INF/androidx/NOTICE.txt"
+              if archive.read(notice) != (Path("app/src/main/resources") / notice).read_bytes():
+                  raise SystemExit("Bundled component notice does not match the source")
+              if not archive.read("META-INF/androidx/datastore/datastore-preferences-external-protobuf/LICENSE.txt").strip():
+                  raise SystemExit("Bundled Protobuf license is empty")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as result:
+              result.write(f"apk={apk.as_posix()}\ntag={tag}\n")
+          PY
+
+      - name: Publish APK to Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          APK_PATH: ${{ steps.release.outputs.apk }}
+        run: |
+          gh auth setup-git
+          refs="$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG" "refs/tags/$RELEASE_TAG^{}")"
+          tag_commit="$(printf '%s\n' "$refs" | awk '
+            /\^\{\}$/ { peeled = $1; next }
+            NF { direct = $1 }
+            END { print (peeled != "" ? peeled : direct) }')"
+          commit="$(git rev-parse HEAD)"
+          if [[ -n "$tag_commit" && "$tag_commit" != "$commit" ]]; then
+            echo "::error::The release tag points to another commit. Update the version before publishing."
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" "$APK_PATH" --repo "$GITHUB_REPOSITORY" --target "$commit" --title "$RELEASE_TAG" --notes ""
+
+      - name: Remove temporary signing files
+        if: always()
+        run: rm -f -- keystore.jks signing.properties

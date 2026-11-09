@@ -1,0 +1,15 @@
+ShortVideoAutoSwipe (短视频挂机) and the AndroidX components below use
+the Apache License, Version 2.0.
+License terms: META-INF/androidx/annotation/annotation/LICENSE.txt
+
+androidx.annotation:annotation
+androidx.collection:collection-ktx
+androidx.collection:collection
+androidx.datastore:datastore-core-okio
+androidx.datastore:datastore-preferences-proto
+androidx.lifecycle:lifecycle-common-java8
+androidx.lifecycle:lifecycle-common
+
+Protobuf license: META-INF/androidx/datastore/datastore-preferences-external-protobuf/LICENSE.txt
+
+androidx.datastore:datastore-preferences-external-protobuf

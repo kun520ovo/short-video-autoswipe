@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">短视频挂机</string>
+    <string name="accessibility_description">在你点击开始后，按设定的次数与时间上滑当前操作的应用，并可选双击。仅读取前台应用信息，不分析页面文字或输入内容。切换应用、锁屏或权限失效时暂停。配置保存在本机，任务进度与日志不写入磁盘。</string>
+</resources>

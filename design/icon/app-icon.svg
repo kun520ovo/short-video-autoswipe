@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="18 18 72 72" role="img" aria-labelledby="title desc">
+  <title id="title">短视频挂机 · 哈基伟图标</title>
+  <desc id="desc">纯白底色，深灰线条的白猫，闭眼微笑。</desc>
+  <rect x="18" y="18" width="72" height="72" fill="#FFFFFF" />
+  <g transform="translate(54 54) scale(0.96) translate(-54 -54)">
+    <path fill="#FFFFFF" stroke="#303746" stroke-width="3.2" stroke-linejoin="round" d="M32,46 L32,33 Q32,29 35,31 L46,39 Q54,36 62,39 L73,31 Q76,29 76,33 V46 C82,55 78,71 66,76 Q54,81 42,76 C30,71 26,56 32,46 Z" />
+    <path fill="none" stroke="#303746" stroke-width="2.8" stroke-linecap="round" d="M38,54.5Q42,51 46,54.5 M62,54.5Q66,51 70,54.5" />
+    <path fill="none" stroke="#303746" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" d="M49,63Q51.5,67 54,63Q56.5,67 59,63" />
+  </g>
+</svg>
