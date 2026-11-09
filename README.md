@@ -63,16 +63,18 @@ Android 本地自动滑屏工具：填写手机上的应用名称，设置上滑
 
 准备 JDK 27、Android SDK Platform `android-37.2` 和 Build Tools `37.0.0`，接受 SDK 许可。将 `JAVA_HOME` 指向 JDK，通过 `ANDROID_HOME` 或本机 `local.properties` 中的 `sdk.dir` 指定 SDK 位置。
 
-在仓库根目录创建本机 `signing.properties`，由 Gradle 读取签名配置：
+正式密钥文件、密钥库密码、别名和私钥密码由你自行准备和设置。在仓库根目录创建本机 `signing.properties`，按密钥库的实际信息填写，由 Gradle 读取：
 
 ```properties
-KEYSTORE_FILE=keystore.jks
+KEYSTORE_FILE=your-release-key.jks
 KEYSTORE_PASSWORD=your-store-password
+KEY_ALIAS=your-key-alias
+KEY_PASSWORD=your-key-password
 ```
 
 密钥文件路径相对仓库根目录，也可使用绝对路径；Windows 路径使用正斜杠。密钥文件和 `signing.properties` 已由 `.gitignore` 排除，应仅保留在本机。
 
-使用只含一把签名私钥的正式密钥库，推荐 PKCS12 格式；私钥密码与库密码保持一致，别名由 Gradle 自动识别。构建会拒绝 Android 默认调试密钥。APK 只启用 v3 签名，适用于本项目最低 Android 10 的要求；v1、v2、v4 关闭。
+本地使用常规签名配置：明确指定密钥和别名，分别读取两个密码，不自动生成密钥、选择别名或改写密码。请使用自己的正式签名密钥；发布流程不会回退到默认 Debug 签名。APK 只启用 v3 签名；v1、v2、v4 关闭。
 
 Windows 在仓库根目录执行：
 
@@ -88,14 +90,24 @@ Linux 或 macOS 将 `.\gradlew.bat` 替换为 `bash ./gradlew`。Wrapper 会下�
 
 [Build and Release 工作流](.github/workflows/build.yml)只构建签名 Release APK。单元测试、Lint、签名、ZIP 对齐和内置许可证检查全部通过后，自动发布到 GitHub Releases。
 
-先在仓库 **Settings → Secrets and variables → Actions** 中配置以下两项 Secrets：
+仓库 **Settings → Secrets and variables → Actions** 只需配置一项 Secret：
 
 | 名称 | 内容 |
 | --- | --- |
-| `KEYSTORE` | 签名密钥库文件的 Base64 内容 |
-| `KEYSTORE_PASSWORD` | 密钥库密码 |
+| `SIGNING_CONFIG` | 将密钥库 Base64、库密码、别名和私钥密码合并填写在同一段 JSON 中 |
 
-两项均为必填，签名别名自动识别，私钥密码复用库密码。工作流会临时生成密钥文件和 `signing.properties`，由 Gradle 签名，并在任务结束时清理这些文件；配置缺失、无效或使用 Android 默认调试密钥时任务会失败。
+只减少仓库需要创建的 Secret 条目，不减少或代填你的签名信息。Secret 名称填 `SIGNING_CONFIG`，值按下面的格式填写；所有值由你提供，真实配置不提交到源码：
+
+```json
+{
+  "KEYSTORE": "你的正式密钥库文件的完整 Base64 内容",
+  "KEYSTORE_PASSWORD": "你设置的密钥库密码",
+  "KEY_ALIAS": "你的签名密钥别名",
+  "KEY_PASSWORD": "你设置的私钥密码"
+}
+```
+
+`KEYSTORE` 填文件的 Base64 内容，其余三项与本地 `signing.properties` 对应。工作流只将你提供的信息还原为临时密钥文件和常规签名配置，屏蔽日志中的敏感字段；Gradle 按指定别名和密码签名，任务结束后清理临时文件。首次配置后，后续发布复用这一项 Secret。
 
 发布有两种触发方式：
 
@@ -123,7 +135,7 @@ Linux 或 macOS 将 `.\gradlew.bat` 替换为 `bash ./gradlew`。Wrapper 会下�
 | build.gradle.kts、settings.gradle.kts    | 项目的构建配置                       |
 | gradle.properties                       | 构建参数，包含 Windows 中文目录设置        |
 | .github/workflows/build.yml             | Release 构建、检查及 GitHub Releases 发布         |
-| .gitignore、.editorconfig、.gitattributes | 文件忽略、编码和换行规则                  |
+| .gitignore、.gitattributes | 文件忽略、换行及二进制处理规则 |
 | README.md                               | 本说明文件                         |
 | LICENSE                                 | 本项目的 Apache-2.0 开源许可证         |
 | app/src/main/resources/META-INF/androidx/NOTICE.txt | 组件说明，随 APK 打包 |

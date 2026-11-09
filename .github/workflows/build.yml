@@ -42,26 +42,42 @@ jobs:
 
       - name: Prepare release signing
         env:
-          KEYSTORE: ${{ secrets.KEYSTORE }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          SIGNING_CONFIG: ${{ secrets.SIGNING_CONFIG }}
         run: |
           python3 - <<'PY'
-          import base64, os
+          import base64, json, os
           from pathlib import Path
-          names = ("KEYSTORE", "KEYSTORE_PASSWORD")
-          missing = [name for name in names if not os.environ.get(name)]
-          if missing:
-              raise SystemExit("Missing signing Secrets: " + ", ".join(missing))
-          keystore = base64.b64decode("".join(os.environ["KEYSTORE"].split()), validate=True)
+          raw = os.environ.get("SIGNING_CONFIG")
+          if not raw:
+              raise SystemExit("Missing signing Secret: SIGNING_CONFIG")
+          names = ("KEYSTORE", "KEYSTORE_PASSWORD", "KEY_ALIAS", "KEY_PASSWORD")
+          try:
+              config = json.loads(raw)
+              if any(not isinstance(config[name], str) or not config[name] for name in names):
+                  raise ValueError()
+          except (ValueError, KeyError, TypeError):
+              raise SystemExit("SIGNING_CONFIG must contain KEYSTORE, KEYSTORE_PASSWORD, KEY_ALIAS and KEY_PASSWORD")
+          def mask(value):
+              print("::add-mask::" + value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
+          encoded = "".join(config["KEYSTORE"].split())
+          if not encoded:
+              raise SystemExit("Signing keystore is empty")
+          mask(encoded)
+          try:
+              keystore = base64.b64decode(encoded, validate=True)
+          except ValueError:
+              raise SystemExit("SIGNING_CONFIG contains invalid keystore Base64")
           if not keystore:
               raise SystemExit("Signing keystore is empty")
-          os.umask(0o077)
-          Path("keystore.jks").write_bytes(keystore)
           properties = ["KEYSTORE_FILE=keystore.jks"]
           for name in names[1:]:
-              value = os.environ[name].encode("utf-16-be")
+              value = config[name].encode("utf-16-be")
               escaped = "".join("\\u" + value[i:i + 2].hex() for i in range(0, len(value), 2))
+              mask(config[name])
+              mask(escaped)
               properties.append(name + "=" + escaped)
+          os.umask(0o077)
+          Path("keystore.jks").write_bytes(keystore)
           Path("signing.properties").write_text("\n".join(properties) + "\n", encoding="ascii")
           PY
 
