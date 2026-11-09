@@ -1,6 +1,11 @@
 import com.android.build.api.variant.HostTestBuilder
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.security.KeyStore
+import java.security.UnrecoverableEntryException
+import java.security.cert.X509Certificate
+import java.util.Collections
 import java.util.Properties
+import javax.naming.ldap.LdapName
 
 plugins {
     alias(libs.plugins.android.application)
@@ -11,9 +16,9 @@ val signingPropertiesFile = rootProject.file("signing.properties")
 val signingProperties = Properties()
 if (signingPropertiesFile.isFile) {
     signingPropertiesFile.inputStream().use { signingProperties.load(it) }
-    require(listOf("KEYSTORE_FILE", "KEYSTORE_PASSWORD", "KEY_ALIAS", "KEY_PASSWORD").all {
+    require(listOf("KEYSTORE_FILE", "KEYSTORE_PASSWORD").all {
         !signingProperties.getProperty(it).isNullOrEmpty()
-    }) { "signing.properties requires KEYSTORE_FILE, KEYSTORE_PASSWORD, KEY_ALIAS and KEY_PASSWORD" }
+    }) { "signing.properties requires KEYSTORE_FILE and KEYSTORE_PASSWORD" }
 }
 
 android {
@@ -43,10 +48,30 @@ android {
     signingConfigs {
         if (signingPropertiesFile.isFile) {
             create("release") {
-                storeFile = rootProject.file(signingProperties.getProperty("KEYSTORE_FILE"))
-                storePassword = signingProperties.getProperty("KEYSTORE_PASSWORD")
-                keyAlias = signingProperties.getProperty("KEY_ALIAS")
-                keyPassword = signingProperties.getProperty("KEY_PASSWORD")
+                val keyStoreFile = rootProject.file(signingProperties.getProperty("KEYSTORE_FILE"))
+                val password = signingProperties.getProperty("KEYSTORE_PASSWORD")
+                val keyStore = KeyStore.getInstance(keyStoreFile, password.toCharArray())
+                val aliases = Collections.list(keyStore.aliases())
+                    .filter { keyStore.entryInstanceOf(it, KeyStore.PrivateKeyEntry::class.java) }
+                require(aliases.size == 1) { "The release keystore must contain exactly one signing private key" }
+                val alias = aliases.single()
+                val certificate = try {
+                    (keyStore.getEntry(alias, KeyStore.PasswordProtection(password.toCharArray()))
+                        as KeyStore.PrivateKeyEntry).certificate as X509Certificate
+                } catch (_: UnrecoverableEntryException) {
+                    throw GradleException("The signing key and keystore must use the same password")
+                }
+                val commonName = LdapName(certificate.subjectX500Principal.name).rdns
+                    .firstOrNull { it.type.equals("CN", ignoreCase = true) }?.value?.toString()
+                require(!alias.equals("androiddebugkey", ignoreCase = true) &&
+                    !commonName.equals("Android Debug", ignoreCase = true)) {
+                    "Use a dedicated release signing key, not the Android debug keystore"
+                }
+                storeFile = keyStoreFile
+                storeType = keyStore.type
+                storePassword = password
+                keyAlias = alias
+                keyPassword = password
                 enableV1Signing = false
                 enableV2Signing = false
                 enableV3Signing = true

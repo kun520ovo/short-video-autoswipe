@@ -68,11 +68,11 @@ Android 本地自动滑屏工具：填写手机上的应用名称，设置上滑
 ```properties
 KEYSTORE_FILE=keystore.jks
 KEYSTORE_PASSWORD=your-store-password
-KEY_ALIAS=your-key-alias
-KEY_PASSWORD=your-key-password
 ```
 
 密钥文件路径相对仓库根目录，也可使用绝对路径；Windows 路径使用正斜杠。密钥文件和 `signing.properties` 已由 `.gitignore` 排除，应仅保留在本机。
+
+使用只含一把签名私钥的正式密钥库，推荐 PKCS12 格式；私钥密码与库密码保持一致，别名由 Gradle 自动识别。构建会拒绝 Android 默认调试密钥。APK 只启用 v3 签名，适用于本项目最低 Android 10 的要求；v1、v2、v4 关闭。
 
 Windows 在仓库根目录执行：
 
@@ -88,16 +88,14 @@ Linux 或 macOS 将 `.\gradlew.bat` 替换为 `bash ./gradlew`。Wrapper 会下�
 
 [Build and Release 工作流](.github/workflows/build.yml)只构建签名 Release APK。单元测试、Lint、签名、ZIP 对齐和内置许可证检查全部通过后，自动发布到 GitHub Releases。
 
-先在仓库 **Settings → Secrets and variables → Actions** 中配置以下四项 Secrets：
+先在仓库 **Settings → Secrets and variables → Actions** 中配置以下两项 Secrets：
 
 | 名称 | 内容 |
 | --- | --- |
 | `KEYSTORE` | 签名密钥库文件的 Base64 内容 |
 | `KEYSTORE_PASSWORD` | 密钥库密码 |
-| `KEY_ALIAS` | 签名密钥别名 |
-| `KEY_PASSWORD` | 对应密钥的密码 |
 
-四项均为必填。工作流会临时生成密钥文件和 `signing.properties`，由 Gradle 签名，并在任务结束时清理这些文件；配置缺失或无效时任务会失败。
+两项均为必填，签名别名自动识别，私钥密码复用库密码。工作流会临时生成密钥文件和 `signing.properties`，由 Gradle 签名，并在任务结束时清理这些文件；配置缺失、无效或使用 Android 默认调试密钥时任务会失败。
 
 发布有两种触发方式：
 

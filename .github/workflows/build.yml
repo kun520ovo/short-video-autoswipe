@@ -44,13 +44,11 @@ jobs:
         env:
           KEYSTORE: ${{ secrets.KEYSTORE }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           python3 - <<'PY'
           import base64, os
           from pathlib import Path
-          names = ("KEYSTORE", "KEYSTORE_PASSWORD", "KEY_ALIAS", "KEY_PASSWORD")
+          names = ("KEYSTORE", "KEYSTORE_PASSWORD")
           missing = [name for name in names if not os.environ.get(name)]
           if missing:
               raise SystemExit("Missing signing Secrets: " + ", ".join(missing))
