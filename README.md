@@ -82,7 +82,7 @@ Windows 在仓库根目录执行：
 .\gradlew.bat :app:testReleaseUnitTest :app:lintRelease :app:assembleRelease
 ```
 
-Linux 或 macOS 将 `.\gradlew.bat` 替换为 `bash ./gradlew`。Wrapper 会下载指定版本的 Gradle，无需另行安装 Gradle。
+Linux 或 macOS 将 `.\gradlew.bat` 替换为 `bash ./gradlew`，并保持 `gradlew` 脚本使用 LF 换行。Wrapper 会下载指定版本的 Gradle，无需另行安装 Gradle。
 
 签名发布包位于 `app/build/outputs/apk/release/短视频挂机-<版本号>.apk`，当前版本的文件名为 `短视频挂机-0.1.0.apk`。许可证在构建时自动打入 APK，可直接分享这个安装包。
 
@@ -135,7 +135,7 @@ Linux 或 macOS 将 `.\gradlew.bat` 替换为 `bash ./gradlew`。Wrapper 会下�
 | build.gradle.kts、settings.gradle.kts    | 项目的构建配置                       |
 | gradle.properties                       | 构建参数，包含 Windows 中文目录设置        |
 | .github/workflows/build.yml             | Release 构建、检查及 GitHub Releases 发布         |
-| .gitignore、.gitattributes | 文件忽略、换行及二进制处理规则 |
+| .gitignore | 本机配置、签名材料和构建产物的忽略规则 |
 | README.md                               | 本说明文件                         |
 | LICENSE                                 | 本项目的 Apache-2.0 开源许可证         |
 | app/src/main/resources/META-INF/androidx/NOTICE.txt | 组件说明，随 APK 打包 |
