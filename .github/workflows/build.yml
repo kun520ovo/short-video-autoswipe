@@ -4,6 +4,12 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: '发布到 Releases（不勾选则仅构建 APK）'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -14,6 +20,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name != 'push' || !github.event.deleted
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -118,13 +125,23 @@ jobs:
               if not archive.read("META-INF/androidx/datastore/datastore-preferences-external-protobuf/LICENSE.txt").strip():
                   raise SystemExit("Bundled Protobuf license is empty")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as result:
-              result.write(f"apk={apk.as_posix()}\ntag={tag}\n")
+              result.write(f"apk={apk.as_posix()}\ntag={tag}\nversion={version}\n")
           PY
 
+      - name: Upload APK to Actions
+        if: github.event_name == 'workflow_dispatch' && !inputs.publish_release
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: ${{ steps.release.outputs.apk }}
+          archive: false
+          if-no-files-found: error
+
       - name: Publish APK to Releases
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_release)
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          APP_VERSION: ${{ steps.release.outputs.version }}
           APK_PATH: ${{ steps.release.outputs.apk }}
         run: |
           gh auth setup-git
@@ -138,7 +155,10 @@ jobs:
             echo "::error::The release tag points to another commit. Update the version before publishing."
             exit 1
           fi
-          gh release create "$RELEASE_TAG" "$APK_PATH" --repo "$GITHUB_REPOSITORY" --target "$commit" --title "$RELEASE_TAG" --notes ""
+          # Use an ASCII filename so GitHub does not strip the Chinese name on upload.
+          release_apk="$RUNNER_TEMP/short-video-autoswipe-${APP_VERSION}.apk"
+          cp -- "$APK_PATH" "$release_apk"
+          gh release create "$RELEASE_TAG" "$release_apk#$(basename "$APK_PATH")" --repo "$GITHUB_REPOSITORY" --target "$commit" --title "短视频挂机 v${APP_VERSION}" --notes ""
 
       - name: Remove temporary signing files
         if: always()

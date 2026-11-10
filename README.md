@@ -88,7 +88,7 @@ Linux 或 macOS 将 `.\gradlew.bat` 替换为 `bash ./gradlew`，并保持 `grad
 
 ### GitHub Actions 与 Releases
 
-[Build and Release 工作流](.github/workflows/build.yml)只构建签名 Release APK。单元测试、Lint、签名、ZIP 对齐和内置许可证检查全部通过后，自动发布到 GitHub Releases。
+[Build and Release 工作流](.github/workflows/build.yml)构建签名 Release APK，可选择仅构建或发布到 GitHub Releases。两种模式都需要签名配置，并执行单元测试、Lint、签名、ZIP 对齐和内置许可证检查；检查全部通过后才提供下载或发布。
 
 仓库 **Settings → Secrets and variables → Actions** 只需配置一项 Secret：
 
@@ -109,12 +109,16 @@ Linux 或 macOS 将 `.\gradlew.bat` 替换为 `bash ./gradlew`，并保持 `grad
 
 `KEYSTORE` 填文件的 Base64 内容，其余三项与本地 `signing.properties` 对应。工作流只将你提供的信息还原为临时密钥文件和常规签名配置，屏蔽日志中的敏感字段；Gradle 按指定别名和密码签名，任务结束后清理临时文件。首次配置后，后续发布复用这一项 Secret。
 
-发布有两种触发方式：
+工作流有两种触发方式：
 
-1. **手动运行**：进入 **Actions → Build and Release → Run workflow**，选择要发布的分支并运行。工作流根据版本号创建 Release 和对应标签，例如 `0.1.0` 对应 `v0.1.0`。
+1. **手动运行**：进入 **Actions → Build and Release → Run workflow**，选择分支，并按需勾选 **发布到 Releases（不勾选则仅构建 APK）**。默认不勾选，仅构建；勾选后，工作流根据版本号创建 Release 和对应标签，例如 `0.1.0` 对应 `v0.1.0`。
 2. **推送版本标签**：推送与 `versionName` 一致的 `v*` 标签，例如 `v0.1.0`。标签与实际 APK 版本不一致时会停止发布。
 
-成功后，在 **Releases → v0.1.0 → Assets** 中直接下载 `短视频挂机-0.1.0.apk`。工作流上传的附件只有这一个 APK，不生成额外的 APK 压缩包或报告归档；GitHub 自动提供的源码 ZIP、tar.gz 下载链接仍会显示。
+Release 标题使用 `短视频挂机 v<版本号>`，实际 Git 标签使用 `v<版本号>`；版本号由构建结果自动读取。
+
+**仅构建**：成功后，在本次 **Actions 运行详情 → Artifacts** 中直接下载 `短视频挂机-0.1.0.apk`。文件以 APK 原样上传，不额外打 ZIP 包；下载需要登录 GitHub，并受仓库设置的构建产物保留期限限制。仅构建不会创建标签或 Release，可以重复构建同一版本。
+
+**发布到 Releases**：成功后，在 **Releases → 短视频挂机 v0.1.0 → Assets** 中下载安装包。附件显示名为 `短视频挂机-0.1.0.apk`，实际下载文件名为 `short-video-autoswipe-0.1.0.apk`。GitHub 会过滤 Release 附件文件名中的中文，因此使用英文下载文件名并设置中文显示名，避免变成 `-0.1.0.apk`。安装后的应用名称仍为“短视频挂机”。工作流只上传一个 APK；GitHub 自动提供的源码 ZIP、tar.gz 下载链接仍会显示。
 
 普通分支推送和 Pull Request 不触发发布。发布新版本时沿用同一签名密钥，在 `app/build.gradle.kts` 中递增 `versionCode`、更新 `versionName`。已有同名 Release，或同名标签指向其他提交时，发布会失败，不覆盖旧版本。
 
