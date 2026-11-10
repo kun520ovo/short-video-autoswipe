@@ -18,6 +18,19 @@ data class PixelRect(val left: Float, val top: Float, val right: Float, val bott
 data class SwipePath(val start: PixelPoint, val end: PixelPoint, val durationMs: Long)
 
 object GesturePlanner {
+    fun contentBounds(screen: PixelRect, window: PixelRect, density: Float): PixelRect? {
+        val bounds = PixelRect(
+            max(screen.left, window.left), max(screen.top, window.top),
+            min(screen.right, window.right), min(screen.bottom, window.bottom),
+        )
+        if (bounds.width <= 0 || bounds.height <= 0 || density <= 0) return null
+        val content = PixelRect(
+            bounds.left + 8 * density, bounds.top + bounds.height * .10f,
+            bounds.right - 8 * density, bounds.bottom - bounds.height * .12f,
+        )
+        return content.takeIf { it.width > 0 && it.height > 0 }
+    }
+
     private data class Span(val start: Float, val end: Float)
     private data class Route(val x: Float, val startY: Float, val endY: Float) {
         val length get() = startY - endY

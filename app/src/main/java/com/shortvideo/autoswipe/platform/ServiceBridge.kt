@@ -2,6 +2,7 @@ package com.shortvideo.autoswipe.platform
 
 import com.shortvideo.autoswipe.domain.*
 import com.shortvideo.autoswipe.model.TargetApp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -47,9 +48,19 @@ class ServiceBridge : AutomationPort {
     }
 
     private val missing = SafetyCheck.Blocked(BlockKind.SERVICE, "无障碍服务未连接，请重新开启服务")
-    override fun availability(): SafetyCheck = backend?.availability() ?: missing
-    override fun foregroundTarget(): TargetApp? = backend?.foregroundTarget()
-    override fun inspect(target: TargetApp): SafetyCheck = backend?.inspect(target) ?: missing
+    private val unavailable = SafetyCheck.Blocked(BlockKind.SERVICE, "暂时无法读取运行状态，请稍后重试或重新开启无障碍服务")
+
+    private inline fun <T> query(fallback: T, block: () -> T): T = try {
+        block()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: RuntimeException) {
+        fallback
+    }
+
+    override fun availability(): SafetyCheck = query(unavailable) { backend?.availability() ?: missing }
+    override fun foregroundTarget(): TargetApp? = query(null) { backend?.foregroundTarget() }
+    override fun inspect(target: TargetApp): SafetyCheck = query(unavailable) { backend?.inspect(target) ?: missing }
     override suspend fun swipe(target: TargetApp): GestureOutcome = backend?.swipe(target) ?: GestureOutcome.Blocked(missing.reason)
     override suspend fun doubleTap(target: TargetApp): GestureOutcome = backend?.doubleTap(target) ?: GestureOutcome.Blocked(missing.reason)
 }

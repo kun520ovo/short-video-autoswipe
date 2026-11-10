@@ -25,7 +25,8 @@ class PermissionChecker(private val context: Context) {
                 info != null && ComponentName(info.packageName, info.name) == expected
             } ?: false
         }.getOrDefault(false)
-        return PermissionState(enabled, Settings.canDrawOverlays(context), connected)
+        val overlay = runCatching { Settings.canDrawOverlays(context) }.getOrDefault(false)
+        return PermissionState(enabled, overlay, connected)
     }
 
     fun intent(kind: PermissionKind): Intent = when (kind) {

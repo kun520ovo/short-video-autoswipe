@@ -2,6 +2,7 @@ package com.shortvideo.autoswipe.accessibility
 
 import android.accessibilityservice.AccessibilityService
 import android.app.KeyguardManager
+import android.graphics.Rect
 import android.os.Build
 import android.os.PowerManager
 import android.view.accessibility.AccessibilityEvent
@@ -26,6 +27,7 @@ class ScreenInspector(
     private val keyguard = requireNotNull(service.getSystemService(KeyguardManager::class.java))
     private val foreground = ForegroundAppTracker()
     private val density get() = service.resources.displayMetrics.density
+    private data class ForegroundWindow(val packageName: String?, val bounds: PixelRect)
 
     fun record(event: AccessibilityEvent) {
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
@@ -44,21 +46,17 @@ class ScreenInspector(
     fun inspect(target: TargetApp): ScreenSnapshot {
         val availability = availability()
         if (availability is SafetyCheck.Blocked) return ScreenSnapshot(availability)
-        val appCheck = checkForeground(target.packageName, foregroundPackage())
+        val window = foregroundWindow()
+            ?: return ScreenSnapshot(SafetyCheck.Blocked(BlockKind.GEOMETRY, "应用窗口暂时不可用"))
+        val appCheck = checkForeground(target.packageName, window.packageName)
         if (appCheck is SafetyCheck.Blocked) return ScreenSnapshot(appCheck)
-        val bounds = geometry.usableBounds()
-        val content = PixelRect(
-            bounds.left + 8 * density, bounds.top + bounds.height * .10f,
-            bounds.right - 8 * density, bounds.bottom - bounds.height * .12f,
-        )
-        if (content.width <= 0 || content.height <= 0) {
-            return ScreenSnapshot(SafetyCheck.Blocked(BlockKind.GEOMETRY, "屏幕尺寸暂不可用"))
-        }
+        val content = GesturePlanner.contentBounds(geometry.usableBounds(), window.bounds, density)
+            ?: return ScreenSnapshot(SafetyCheck.Blocked(BlockKind.GEOMETRY, "屏幕尺寸暂不可用"))
         return ScreenSnapshot(SafetyCheck.Ready, content)
     }
 
     fun foregroundTarget(): TargetApp? {
-        val packageName = foregroundPackage() ?: return null
+        val packageName = foregroundWindow()?.packageName ?: return null
         if (packageName == service.packageName) return null
         return try {
             val packages = service.packageManager
@@ -74,7 +72,7 @@ class ScreenInspector(
         }
     }
 
-    private fun foregroundPackage(): String? {
+    private fun foregroundWindow(): ForegroundWindow? {
         val windows = try { service.windows } catch (_: RuntimeException) { return null }
         return try {
             // Keyboard and overlay windows never replace the foreground application.
@@ -82,7 +80,12 @@ class ScreenInspector(
             val focused = appWindows.firstOrNull { it.isFocused }
                 ?: appWindows.firstOrNull { it.isActive }
                 ?: appWindows.firstOrNull()
-            foreground.resolve(focused?.id, focused?.let(::rootPackage))
+                ?: return null
+            val bounds = Rect().also { focused.getBoundsInScreen(it) }
+            ForegroundWindow(
+                foreground.resolve(focused.id, rootPackage(focused)),
+                PixelRect(bounds.left.toFloat(), bounds.top.toFloat(), bounds.right.toFloat(), bounds.bottom.toFloat()),
+            )
         } catch (_: RuntimeException) {
             null
         } finally {
