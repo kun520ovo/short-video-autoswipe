@@ -192,7 +192,16 @@ class AutomationEngine(
     private fun pauseForBlock(reason: String, kind: BlockKind?) {
         val foregroundLost = kind == BlockKind.FOREGROUND
         val canRecover = foregroundLost || kind == BlockKind.GEOMETRY
-        pauseInternal(if (foregroundLost) "等待" + activeTarget().label + "，切回后自动继续" else reason, resumeOnReturn = canRecover)
+        pauseInternal(if (foregroundLost) foregroundRecoveryMessage() else reason, resumeOnReturn = canRecover)
+    }
+
+    private fun foregroundRecoveryMessage(): String {
+        val prefix = "等待"
+        val suffix = "，切回后自动继续"
+        val name = activeTarget().label
+        val limit = LogEntry.MAX_MESSAGE_LENGTH - prefix.length - suffix.length
+        val label = if (name.length <= limit) name else name.take(limit - 1).trimEnd { it.isHighSurrogate() } + "…"
+        return prefix + label + suffix
     }
 
     private fun continueAfterInterruptedGesture(): Boolean = when (val check = port.inspect(activeTarget())) {

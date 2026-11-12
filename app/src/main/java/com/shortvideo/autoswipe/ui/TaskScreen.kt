@@ -26,17 +26,21 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.shortvideo.autoswipe.R
+import com.shortvideo.autoswipe.domain.GESTURE_RECOVERY_GUIDE
 import com.shortvideo.autoswipe.model.TargetApp
 import com.shortvideo.autoswipe.model.RunStatus
 import com.shortvideo.autoswipe.platform.PermissionKind
@@ -45,7 +49,7 @@ import com.shortvideo.autoswipe.platform.PermissionKind
 fun TaskScreen(
     model: MainViewModel,
     onStart: () -> Unit,
-    onPause: (resume: Boolean) -> Unit,
+    onPause: () -> Unit,
     onAllPermissions: () -> Unit,
     onPermission: (PermissionKind) -> Unit,
 ) {
@@ -70,7 +74,7 @@ fun TaskScreen(
             isError = appError != null,
             onBlur = { model.touched("app") },
         )
-        FieldError(appError)
+        FieldError(appError ?: ui.appLoadError)
         if (ui.draft.appName.isNotBlank() && (ui.match.selected != null || ui.appLoading || ui.match.candidates.size > 1)) {
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 32.dp).padding(top = 7.dp),
@@ -136,18 +140,34 @@ fun TaskScreen(
         Text("运行权限", color = palette.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp, bottom = 5.dp))
         PermissionRow("无障碍服务", if (ui.permissions.accessibility) "已开启" else "未开启", ui.permissions.accessibility) { onPermission(PermissionKind.ACCESSIBILITY) }
         PermissionRow("悬浮窗", if (ui.permissions.overlay) "已授权" else "未授权", ui.permissions.overlay) { onPermission(PermissionKind.OVERLAY) }
-        ui.message?.let { Text(it, color = palette.error, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp)) }
+        val paused = ui.run.status == RunStatus.PAUSED
+        ui.message?.let {
+            Text(
+                it, color = palette.error, fontSize = 12.sp,
+                fontWeight = if (paused && it == "任务已暂停") FontWeight.Bold else FontWeight.Normal,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+        if (paused && ui.run.pauseReason != GESTURE_RECOVERY_GUIDE) {
+            Text(
+                buildAnnotatedString {
+                    append("请切到要操作的应用，点击悬浮窗")
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("“继续”") }
+                    append("。")
+                },
+                color = palette.ink, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp),
+            )
+        }
         Spacer(Modifier.height(14.dp))
         if (ui.run.locked) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                val paused = ui.run.status == RunStatus.PAUSED
-                ControlButton(
-                    if (paused) "继续" else "暂停",
-                    { focus.clearFocus(); if (paused && !ui.permissions.granted) onAllPermissions() else onPause(paused) },
-                    Modifier.weight(1f),
-                    icon = if (paused) R.drawable.ic_play else R.drawable.ic_pause,
-                    background = palette.accent, foreground = MaterialTheme.colorScheme.onPrimary,
-                )
+                if (!paused) {
+                    ControlButton(
+                        "暂停", { focus.clearFocus(); onPause() }, Modifier.weight(1f),
+                        icon = R.drawable.ic_pause,
+                        background = palette.accent, foreground = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
                 ControlButton("关闭", model::stop, Modifier.weight(1f), R.drawable.ic_stop, background = palette.field, foreground = palette.ink)
             }
             Text("本次参数已锁定，关闭后可修改", color = palette.muted, fontSize = 11.sp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 13.dp))

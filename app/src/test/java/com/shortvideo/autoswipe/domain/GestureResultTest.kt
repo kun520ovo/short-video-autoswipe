@@ -21,7 +21,10 @@ class GestureResultTest {
         advanceTimeBy(2_499); runCurrent()
         assertFalse(result.isCompleted)
         advanceTimeBy(1); runCurrent()
-        assertTrue(result.await() is GestureOutcome.Blocked)
+        assertEquals(
+            GestureOutcome.Blocked("未收到手势结果。请关闭后重新开启无障碍服务，再切回要操作的应用，通过悬浮窗继续。"),
+            result.await(),
+        )
     }
 
     @Test

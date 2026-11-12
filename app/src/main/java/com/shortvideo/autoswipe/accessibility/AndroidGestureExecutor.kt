@@ -36,7 +36,7 @@ class AndroidGestureExecutor(
         if (closed) return@withLock GestureOutcome.Blocked("无障碍服务已断开")
         val previous = inFlight
         if (previous != null && withTimeoutOrNull(1_200) { previous.await(); true } != true) {
-            return@withLock GestureOutcome.Blocked("上一手势尚未结束，请稍后继续")
+            return@withLock GestureOutcome.Blocked(GESTURE_RECOVERY_GUIDE)
         }
         awaitOverlayIdle()
         currentCoroutineContext().ensureActive()

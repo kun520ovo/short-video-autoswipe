@@ -46,7 +46,7 @@ class MainActivity : ComponentActivity() {
                 TaskScreen(
                     model = model,
                     onStart = { model.start(this) },
-                    onPause = { resume -> model.pauseOrResume(resume) },
+                    onPause = model::pause,
                     onAllPermissions = { permissionFlow = true; requestNextPermission() },
                     onPermission = { kind -> permissionFlow = false; openPermission(kind) },
                 )

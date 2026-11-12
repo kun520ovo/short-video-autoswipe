@@ -103,6 +103,25 @@ class AutomationEngineTest {
     }
 
     @Test
+    fun aLongAppNameDoesNotRemoveTheForegroundRecoveryInstruction() = runTest {
+        val longTarget = target.copy(label = "应用".repeat(300))
+        val port = FakePort()
+        val engine = engine(port)
+        engine.start(config(), longTarget) { Result.success(Unit) }
+        runCurrent(); advanceTimeBy(10_000); runCurrent()
+        port.safe = SafetyCheck.Blocked(BlockKind.FOREGROUND, "目标应用已离开前台")
+        engine.environmentChanged(); runCurrent()
+        val state = engine.state.value
+        val message = requireNotNull(state.latestLog).message
+        assertEquals(RunStatus.PAUSED, state.status)
+        assertTrue(message.endsWith("，切回后自动继续"))
+        assertTrue(message.length <= LogEntry.MAX_MESSAGE_LENGTH)
+        assertEquals(message, state.pauseReason)
+        assertEquals(longTarget, requireNotNull(state.session).target)
+        assertTrue(engine.waitingForAutoResume)
+    }
+
+    @Test
     fun anUnexpectedFailureDoesNotCopyExceptionContentsIntoLogs() = runTest {
         val port = FakePort().apply { inspectFailure = IllegalStateException("PRIVATE_MARKER") }
         val engine = engine(port)

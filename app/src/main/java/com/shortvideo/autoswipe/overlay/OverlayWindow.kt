@@ -14,6 +14,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -51,6 +52,7 @@ class OverlayWindow(
     private var params: WindowManager.LayoutParams? = null
     private var model by mutableStateOf(RunState())
     private var collapsed by mutableStateOf(false)
+    private var maxHeightDp by mutableStateOf(1f)
     private var preferredPositionDp: PixelPoint? = null
     private var dragOrigin = PixelPoint(0f, 0f)
     private val touching = MutableStateFlow(false)
@@ -125,6 +127,7 @@ class OverlayWindow(
                 OverlayContent(
                     state = model,
                     collapsed = collapsed,
+                    maxHeight = maxHeightDp.dp,
                     onCollapse = {
                         frame.handles.clear()
                         collapsed = !collapsed
@@ -168,6 +171,7 @@ class OverlayWindow(
         val bounds = geometry.usableBounds()
         val inset = 6 * density
         val usable = PixelRect(bounds.left + inset, bounds.top + inset, bounds.right - inset, bounds.bottom - inset)
+        maxHeightDp = (usable.height / density).coerceAtLeast(1f)
         val width = desiredWidth()
         val height = view.height.takeIf { it > 0 } ?: ((if (collapsed) 44 else 170) * density).roundToInt()
         val preferred = preferredPositionDp?.let { PixelPoint(it.x * density, it.y * density) }

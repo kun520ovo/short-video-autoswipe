@@ -20,10 +20,13 @@ sealed interface GestureOutcome {
     data class Blocked(val reason: String, val kind: BlockKind? = null) : GestureOutcome
 }
 
+internal const val GESTURE_RECOVERY_GUIDE =
+    "未收到手势结果。请关闭后重新开启无障碍服务，再切回要操作的应用，通过悬浮窗继续。"
+
 /** Bound only the dispatched gesture; time spent holding the overlay is excluded. */
 internal suspend fun awaitGestureResult(block: suspend () -> GestureOutcome): GestureOutcome =
     withTimeoutOrNull(2_500) { block() }
-        ?: GestureOutcome.Blocked("手势结果超时，请重新开启无障碍服务后继续")
+        ?: GestureOutcome.Blocked(GESTURE_RECOVERY_GUIDE)
 
 interface AutomationPort {
     fun availability(): SafetyCheck

@@ -17,7 +17,13 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
 private data class AppListState(val values: List<TargetApp> = emptyList(), val loading: Boolean = true, val error: String? = null)
-private data class UiFlags(val touched: Set<String> = emptySet(), val submitted: Boolean = false, val picker: Boolean = false, val message: String? = null)
+private data class UiFlags(
+    val touched: Set<String> = emptySet(),
+    val submitted: Boolean = false,
+    val picker: Boolean = false,
+    val message: String? = null,
+    val startNeedsApp: Boolean = false,
+)
 private data class FormBundle(val draft: FormDraft, val apps: AppListState, val flags: UiFlags, val permissions: PermissionState)
 
 data class MainUiState(
@@ -30,6 +36,7 @@ data class MainUiState(
     val appLoading: Boolean = true,
     val picker: Boolean = false,
     val message: String? = null,
+    val appLoadError: String? = null,
 ) {
     val primaryLabel get() = when {
         !ready -> "正在读取设置"
@@ -54,19 +61,30 @@ class MainViewModel(val container: AppContainer) : ViewModel() {
         val effective = if (session != null) FormDraft.from(session.config, session.target) else form.draft
         val match = if (session != null) {
             AppMatch(listOf(session.target), session.target)
+        } else if (form.apps.loading || form.apps.error != null) {
+            AppMatch(emptyList(), null)
         } else AppNameMatcher.match(form.apps.values, effective.appName, effective.selectedComponent)
         val allErrors = effective.errors().toMutableMap()
-        if (!form.apps.loading && effective.appName.isNotBlank() && match.candidates.isEmpty()) {
+        if (!form.apps.loading && form.apps.error == null && effective.appName.isNotBlank() && match.candidates.isEmpty()) {
             allErrors["app"] = "未找到该应用，请检查名称"
         }
         val visibleErrors = allErrors.filterKeys { key ->
             form.flags.submitted || key in form.flags.touched ||
                 (key == "app" && (effective.appName.isBlank() || !form.apps.loading))
         }
+        // Derive Start feedback from the current lookup so it clears after recovery.
+        val appStartMessage = if (form.flags.startNeedsApp && session == null) {
+            when {
+                form.apps.loading -> "正在查找应用，请稍后再开始"
+                form.apps.error != null || match.selected == null -> "请先匹配目标应用"
+                else -> null
+            }
+        } else null
         MainUiState(
             effective, run, form.permissions, match, visibleErrors,
             draftReady, form.apps.loading, form.flags.picker,
-            form.flags.message ?: form.apps.error ?: run.pauseReason,
+            form.flags.message ?: appStartMessage ?: run.pauseReason,
+            appLoadError = form.apps.error.takeIf { session == null },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MainUiState())
 
@@ -99,14 +117,14 @@ class MainViewModel(val container: AppContainer) : ViewModel() {
         refreshPermissions()
         container.bridge.refresh()
         appsJob?.cancel()
+        apps.value = apps.value.copy(loading = true, error = null)
         appsJob = viewModelScope.launch {
-            apps.value = apps.value.copy(loading = true, error = null)
             try {
                 apps.value = AppListState(container.resolver.installedApps(), false)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                apps.value = AppListState(loading = false, error = "无法读取已安装应用，请稍后重试")
+                apps.value = AppListState(loading = false, error = "无法读取已安装应用，请稍后重试。")
             }
         }
     }
@@ -125,7 +143,7 @@ class MainViewModel(val container: AppContainer) : ViewModel() {
             "like" -> draft.value.copy(likePercent = value.take(4))
             else -> return
         }
-        flags.value = flags.value.copy(message = null)
+        flags.value = flags.value.copy(message = null, startNeedsApp = false)
         saveLater()
     }
 
@@ -141,7 +159,7 @@ class MainViewModel(val container: AppContainer) : ViewModel() {
     fun selectApp(app: TargetApp) {
         if (container.engine.state.value.locked) return
         draft.value = draft.value.copy(appName = app.label, selectedComponent = app.component)
-        flags.value = flags.value.copy(picker = false, message = null)
+        flags.value = flags.value.copy(picker = false, message = null, startNeedsApp = false)
         saveLater()
     }
 
@@ -152,12 +170,18 @@ class MainViewModel(val container: AppContainer) : ViewModel() {
             draft.value = value
             saveLater()
         }
-        flags.value = flags.value.copy(submitted = true, message = null)
+        flags.value = flags.value.copy(submitted = true, message = null, startNeedsApp = false)
         val config = value.toConfig() ?: return
-        val match = AppNameMatcher.match(apps.value.values, value.appName, value.selectedComponent)
+        val list = apps.value
+        if (list.loading || list.error != null) {
+            flags.value = flags.value.copy(startNeedsApp = true)
+            return
+        }
+        val match = AppNameMatcher.match(list.values, value.appName, value.selectedComponent)
         val target = match.selected
         if (target == null) {
-            if (match.candidates.size > 1) openPicker() else message("请先匹配目标应用")
+            if (match.candidates.size > 1) openPicker()
+            else flags.value = flags.value.copy(startNeedsApp = true)
             return
         }
         if (activity.isFinishing || activity.isDestroyed) return
@@ -174,16 +198,7 @@ class MainViewModel(val container: AppContainer) : ViewModel() {
         }
     }
 
-    fun pauseOrResume(resume: Boolean) {
-        viewModelScope.launch {
-            if (resume) {
-                val result = container.engine.resume()
-                if (result is CommandResult.Rejected) {
-                    if (container.engine.state.value.status == RunStatus.PAUSED) message(result.message)
-                } else message(null)
-            } else container.engine.pause()
-        }
-    }
+    fun pause() { viewModelScope.launch { container.engine.pause() } }
 
     fun stop() { viewModelScope.launch { container.engine.stop(); message(null) } }
     fun message(value: String?) { flags.value = flags.value.copy(message = value) }

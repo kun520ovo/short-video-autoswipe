@@ -4,10 +4,14 @@ import android.graphics.RectF
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,6 +26,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import com.shortvideo.autoswipe.R
 import com.shortvideo.autoswipe.model.RunStage
@@ -37,6 +42,7 @@ import java.util.Date
 fun OverlayContent(
     state: RunState,
     collapsed: Boolean,
+    maxHeight: Dp,
     onCollapse: () -> Unit,
     onAction: (RunControlAction) -> Unit,
     onHandle: (String, RectF) -> Unit,
@@ -60,7 +66,8 @@ fun OverlayContent(
         return
     }
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(windowColor).padding(horizontal = 10.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().heightIn(max = maxHeight).clip(RoundedCornerShape(12.dp))
+            .background(windowColor).padding(horizontal = 10.dp, vertical = 8.dp),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Row(
@@ -89,13 +96,25 @@ fun OverlayContent(
         val log = state.latestLog
         val locale = LocalLocale.current.platformLocale
         val formatter = remember(locale) { SimpleDateFormat("HH:mm", locale) }
-        Column(
-            Modifier.fillMaxWidth().handle("log", onHandle).padding(bottom = 9.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            LogLine(log?.timeMillis, log?.message ?: "等待任务", formatter)
-            if (session.config.randomLike) {
-                LogLine(session.likeCountUpdatedAtMillis, "已点赞 ${session.likeCount} 次", formatter)
+        key(session.id, log?.message) {
+            val scroll = rememberScrollState()
+            val logBounds = remember { RectF() }
+            val scrollable = scroll.maxValue > 0
+            // A scrollable log consumes vertical swipes; header/count still drag the window.
+            SideEffect { onHandle("log", if (scrollable) RectF() else RectF(logBounds)) }
+            Column(
+                Modifier.weight(1f, fill = false).fillMaxWidth()
+                    .handle("log") { name, bounds ->
+                        logBounds.set(bounds)
+                        onHandle(name, if (scroll.maxValue > 0) RectF() else bounds)
+                    }
+                    .verticalScroll(scroll).padding(bottom = 9.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                LogLine(log?.timeMillis, log?.message ?: "等待任务", formatter)
+                if (session.config.randomLike) {
+                    LogLine(session.likeCountUpdatedAtMillis, "已点赞 ${session.likeCount} 次", formatter, wrap = false)
+                }
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -120,12 +139,14 @@ fun OverlayContent(
 }
 
 @Composable
-private fun LogLine(timeMillis: Long?, message: String, formatter: SimpleDateFormat) {
+private fun LogLine(timeMillis: Long?, message: String, formatter: SimpleDateFormat, wrap: Boolean = true) {
     val time = remember(timeMillis, formatter) { timeMillis?.let { formatter.format(Date(it)) } ?: "—" }
     Text(
         time + "  " + message,
         color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium,
-        maxLines = 1, overflow = TextOverflow.Ellipsis,
+        maxLines = if (wrap) Int.MAX_VALUE else 1,
+        softWrap = wrap,
+        overflow = if (wrap) TextOverflow.Clip else TextOverflow.Ellipsis,
     )
 }
 
