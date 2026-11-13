@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item type="id" name="task_screen" />
+    <item type="id" name="repository_title" />
+    <item type="id" name="input_app" />
+    <item type="id" name="input_count" />
+    <item type="id" name="input_min" />
+    <item type="id" name="input_max" />
+    <item type="id" name="input_like" />
+    <item type="id" name="random_like" />
+    <item type="id" name="primary_action" />
+    <item type="id" name="pause_action" />
+    <item type="id" name="stop_action" />
+    <item type="id" name="run_message" />
+    <item type="id" name="continue_hint" />
+    <item type="id" name="match_action" />
+    <item type="id" name="match_row" />
+    <item type="id" name="permission_accessibility" />
+    <item type="id" name="permission_overlay" />
+    <item type="id" name="picker_list" />
+    <item type="id" name="overlay_compact" />
+    <item type="id" name="overlay_collapse" />
+    <item type="id" name="overlay_action" />
+    <item type="id" name="overlay_stop" />
+    <item type="id" name="overlay_log" />
+    <item type="id" name="overlay_like_log" />
+    <item type="id" name="overlay_counts" />
+</resources>

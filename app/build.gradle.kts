@@ -4,7 +4,6 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.compose)
 }
 
 val signingPropertiesFile = rootProject.file("signing.properties")
@@ -26,16 +25,13 @@ android {
         applicationId = "com.shortvideo.autoswipe"
         minSdk = 29
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.1"
+        versionCode = 2
+        versionName = "0.1.2"
         ndk {
             abiFilters += "arm64-v8a"
         }
     }
 
-    buildFeatures {
-        compose = true
-    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -78,6 +74,7 @@ android {
         localeFilters += "zh-rCN"
     }
     testOptions {
+        unitTests.isIncludeAndroidResources = true
         unitTests.all {
             it.useJUnitPlatform()
         }
@@ -118,18 +115,17 @@ kotlin {
 
 dependencies {
     implementation(libs.androidx.core)
-    implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.activity)
+    implementation(libs.androidx.lifecycle.runtime)
     implementation(libs.androidx.lifecycle.viewmodel)
     implementation(libs.androidx.savedstate)
     implementation(libs.androidx.datastore)
     implementation(libs.coroutines.android)
-    implementation(platform(libs.compose.bom))
-    implementation(libs.compose.ui)
-    implementation(libs.compose.foundation)
-    implementation(libs.compose.material3)
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.coroutines.test)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.junit4)
+    testRuntimeOnly(libs.junit.vintage)
     testRuntimeOnly(libs.junit.launcher)
 }

@@ -1,313 +1,409 @@
 package com.shortvideo.autoswipe.ui
 
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.unit.TextUnit
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Rect
+import android.graphics.Typeface
+import android.os.Bundle
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.TextUtils
+import android.text.style.StyleSpan
+import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewConfiguration
+import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
 import com.shortvideo.autoswipe.R
 import com.shortvideo.autoswipe.domain.GESTURE_RECOVERY_GUIDE
-import com.shortvideo.autoswipe.model.TargetApp
 import com.shortvideo.autoswipe.model.RunStatus
+import com.shortvideo.autoswipe.model.TargetApp
 import com.shortvideo.autoswipe.platform.PermissionKind
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.cancel
+import kotlin.math.hypot
 
-@Composable
-fun TaskScreen(
-    model: MainViewModel,
-    onStart: () -> Unit,
-    onPause: () -> Unit,
-    onAllPermissions: () -> Unit,
-    onPermission: (PermissionKind) -> Unit,
-) {
-    val ui by model.uiState.collectAsStateWithLifecycle()
-    val palette = LocalAppPalette.current
-    val focus = LocalFocusManager.current
-    val keyboard = LocalSoftwareKeyboardController.current
-    val inputsLocked = ui.run.locked || !ui.ready
-    Column(
-        Modifier.fillMaxSize().background(palette.background)
-            .windowInsetsPadding(WindowInsets.safeDrawing).imePadding()
-            .verticalScroll(rememberScrollState())
-            .pointerInput(Unit) { detectTapGestures { focus.clearFocus() } }
-            .padding(horizontal = 24.dp),
-    ) {
-        Text("短视频挂机", color = palette.ink, fontSize = 23.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 24.dp, bottom = 26.dp))
-        Text("应用名称", color = palette.muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 10.dp))
-        val appError = ui.errors["app"]
-        PlainInput(
-            ui.draft.appName, { model.edit("app", it) }, inputsLocked,
-            Modifier.fillMaxWidth().height(52.dp), placeholder = "填写手机里的应用名称",
-            isError = appError != null,
-            onBlur = { model.touched("app") },
-        )
-        FieldError(appError ?: ui.appLoadError)
-        if (ui.draft.appName.isNotBlank() && (ui.match.selected != null || ui.appLoading || ui.match.candidates.size > 1)) {
-            Row(
-                Modifier.fillMaxWidth().heightIn(min = 32.dp).padding(top = 7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(7.dp),
-            ) {
-                val selected = ui.match.selected
-                when {
-                    selected != null -> {
-                        InstalledIcon(selected, model, Modifier.size(22.dp))
-                        Text(selected.label, Modifier.weight(1f), color = palette.ink, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("已匹配", color = palette.accent, fontSize = 11.sp)
-                        if (ui.match.candidates.size > 1 && !ui.run.locked) TextButton(onClick = model::openPicker) { Text("更换") }
-                    }
-                    ui.appLoading -> Text("正在查找应用", color = palette.muted, fontSize = 12.sp)
-                    ui.match.candidates.size > 1 -> {
-                        Text("找到 " + ui.match.candidates.size + " 个应用", Modifier.weight(1f), color = palette.ink, fontSize = 12.sp)
-                        TextButton(onClick = model::openPicker) { Text("选择") }
-                    }
-                }
-            }
+data class TaskScreenActions(
+    val edit: (String, String) -> Unit,
+    val touched: (String) -> Unit,
+    val setLike: (Boolean) -> Unit,
+    val openPicker: () -> Unit,
+    val closePicker: () -> Unit,
+    val selectApp: (TargetApp) -> Unit,
+    val start: () -> Unit,
+    val pause: () -> Unit,
+    val stop: () -> Unit,
+    val allPermissions: () -> Unit,
+    val permission: (PermissionKind) -> Unit,
+    val loadIcon: suspend (TargetApp) -> Bitmap?,
+    val openRepository: () -> Unit,
+)
+
+/** One reusable view tree; the existing ViewModel remains the only source of form/task state. */
+class TaskScreen(context: Context, private val actions: TaskScreenActions) : ScrollView(context) {
+    private val palette = context.appPalette()
+    private val scope = MainScope()
+    private val column = LinearLayout(context)
+    private val inputs = linkedMapOf<String, DraftInput>()
+    private val errors = linkedMapOf<String, TextView>()
+    private val appField: LinearLayout
+    private val matchRow = LinearLayout(context)
+    private val matchIcon = InstalledIcon(context, scope, actions.loadIcon)
+    private val matchLabel = context.label("", 12f, palette.ink)
+    private val matchStatus = context.label("已匹配", 11f, palette.accent)
+    private val matchAction = textButton("") { dismissKeyboard(); actions.openPicker() }
+    private val likeSwitch = LikeSwitch(context)
+    private val likeRow: LinearLayout
+    private val accessibility: PermissionRow
+    private val overlay: PermissionRow
+    private val message = context.label("", 12f, palette.error)
+    private val continueHint = context.label("", 12f, palette.ink)
+    private val primary = ControlButton(context)
+    private val controls = LinearLayout(context)
+    private val pause = ControlButton(context)
+    private val stop = ControlButton(context)
+    private val lockedHint = context.label("本次参数已锁定，关闭后可修改", 11f, palette.muted)
+    private var current: MainUiState? = null
+    private var syncingLike = false
+    private var picker: AppPickerDialog? = null
+    private var restoredFocus: Bundle? = null
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+    private var dismissEligible = false
+    private var downX = 0f
+    private var downY = 0f
+    private var downScroll = 0
+    private var appHasError = false
+
+    init {
+        id = R.id.task_screen
+        isFillViewport = true
+        setBackgroundColor(palette.background)
+        column.orientation = LinearLayout.VERTICAL
+        column.setPadding(context.dp(24), 0, context.dp(24), context.dp(24))
+        column.isFocusableInTouchMode = true
+        column.descendantFocusability = ViewGroup.FOCUS_BEFORE_DESCENDANTS
+        addView(column, LayoutParams(-1, -2))
+
+        add(context.label("短视频挂机", 23f, palette.ink, true, 30f).apply {
+            id = R.id.repository_title
+            contentDescription = context.getString(R.string.repository_title_description)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { dismissKeyboard(); actions.openRepository() }
+        }, top = 24, bottom = 26)
+        add(context.label("应用名称", 12f, palette.muted), bottom = 10)
+        appField = plainInput("app", R.id.input_app, "应用名称", false, "填写手机里的应用名称", null, 52)
+        add(appField)
+        addError("app")
+        matchRow.id = R.id.match_row
+        matchRow.orientation = LinearLayout.HORIZONTAL
+        matchRow.gravity = Gravity.CENTER_VERTICAL
+        matchRow.minimumHeight = context.dp(32)
+        matchRow.setPadding(0, context.dp(7), 0, 0)
+        matchRow.addView(matchIcon, LinearLayout.LayoutParams(context.dp(22), context.dp(22)).apply { marginEnd = context.dp(7) })
+        matchLabel.setSingleLine()
+        matchLabel.ellipsize = TextUtils.TruncateAt.END
+        matchRow.addView(matchLabel, LinearLayout.LayoutParams(0, -2, 1f))
+        matchRow.addView(matchStatus, LinearLayout.LayoutParams(-2, -2))
+        matchAction.id = R.id.match_action
+        matchRow.addView(matchAction, LinearLayout.LayoutParams(-2, context.dp(48)))
+        add(matchRow)
+        addSpace(8)
+
+        add(settingRow("滑屏次数", plainInput("count", R.id.input_count, "滑屏次数", true, "填写次数", "次", 44)))
+        addError("count")
+        divider()
+        val time = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = context.rounded(palette.field, 10)
+            setPadding(context.dp(10), 0, context.dp(10), 0)
         }
-        Spacer(Modifier.height(8.dp))
-        SettingRow("滑屏次数") {
-            PlainInput(
-                ui.draft.count, { model.edit("count", it) }, inputsLocked, Modifier.width(150.dp).height(44.dp),
-                unit = "次", numeric = true, placeholder = "填写次数", onBlur = { model.touched("count") },
-            )
+        time.addView(input("min", R.id.input_min, "最短停留时间", true, true, "最短", 16f, 12f), LinearLayout.LayoutParams(0, -1, 1f))
+        time.addView(context.label("–", 13f, palette.muted), LinearLayout.LayoutParams(-2, -2).apply {
+            marginStart = context.dp(5); marginEnd = context.dp(5)
+        })
+        time.addView(input("max", R.id.input_max, "最长停留时间", true, true, "最长", 16f, 12f), LinearLayout.LayoutParams(0, -1, 1f))
+        time.addView(context.label("秒", 12f, palette.muted), LinearLayout.LayoutParams(-2, -2).apply { marginStart = context.dp(5) })
+        add(settingRow("停留时间", time))
+        addError("time")
+        divider()
+
+        likeSwitch.id = R.id.random_like
+        likeSwitch.setOnCheckedChangeListener { _, checked -> if (!syncingLike) actions.setLike(checked) }
+        add(settingRow("随机双击点赞", likeSwitch, 52, 48))
+        likeRow = settingRow("点赞概率", plainInput("like", R.id.input_like, "点赞概率", true, "概率", "%", 44), 94)
+        (likeRow.getChildAt(0) as TextView).apply { setTextColor(palette.muted); textSize = 12f }
+        likeRow.minimumHeight = context.dp(44)
+        add(likeRow, bottom = 12)
+        addError("like")
+        divider()
+
+        add(context.label("运行权限", 12f, palette.muted), top = 12, bottom = 5)
+        accessibility = PermissionRow("无障碍服务", PermissionKind.ACCESSIBILITY, R.id.permission_accessibility)
+        overlay = PermissionRow("悬浮窗", PermissionKind.OVERLAY, R.id.permission_overlay)
+        add(accessibility.row)
+        add(overlay.row)
+        message.id = R.id.run_message
+        add(message, top = 8)
+        continueHint.id = R.id.continue_hint
+        continueHint.text = SpannableString("请切到要操作的应用，点击悬浮窗“继续”。").apply {
+            val start = indexOf("“继续”")
+            setSpan(StyleSpan(Typeface.BOLD), start, start + 4, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
-        FieldError(ui.errors["count"])
-        HorizontalDivider(color = palette.line)
-        SettingRow("停留时间") {
-            Row(
-                Modifier.width(150.dp).height(44.dp).clip(RoundedCornerShape(10.dp)).background(palette.field).padding(horizontal = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
-            ) {
-                InputText(ui.draft.minSeconds, { model.edit("min", it) }, inputsLocked, Modifier.weight(1f), "最短", { model.touched("time") })
-                Text("–", color = palette.muted, fontSize = 13.sp)
-                InputText(ui.draft.maxSeconds, { model.edit("max", it) }, inputsLocked, Modifier.weight(1f), "最长", { model.touched("time") })
-                Text("秒", color = palette.muted, fontSize = 12.sp)
-            }
+        add(continueHint, top = 12)
+        addSpace(14)
+        primary.id = R.id.primary_action
+        primary.setOnClickListener {
+            dismissKeyboard()
+            if (current?.permissions?.granted == true) actions.start() else actions.allPermissions()
         }
-        FieldError(ui.errors["time"])
-        HorizontalDivider(color = palette.line)
-        SettingRow("随机双击点赞") {
-            Switch(
-                checked = ui.draft.randomLike, onCheckedChange = model::setLike, enabled = !inputsLocked,
-                colors = SwitchDefaults.colors(checkedTrackColor = palette.accent),
-            )
+        add(primary, height = 52)
+        controls.orientation = LinearLayout.HORIZONTAL
+        pause.id = R.id.pause_action
+        stop.id = R.id.stop_action
+        pause.setOnClickListener { dismissKeyboard(); actions.pause() }
+        stop.setOnClickListener { actions.stop() }
+        controls.addView(pause, LinearLayout.LayoutParams(0, context.dp(52), 1f).apply { marginEnd = context.dp(10) })
+        controls.addView(stop, LinearLayout.LayoutParams(0, context.dp(52), 1f))
+        add(controls)
+        lockedHint.gravity = Gravity.CENTER
+        add(lockedHint, top = 13)
+        render(MainUiState())
+    }
+
+    fun render(ui: MainUiState) {
+        if (current == ui) return
+        val wasLocked = current?.let { it.run.locked || !it.ready } ?: true
+        current = ui
+        val locked = ui.run.locked || !ui.ready
+        if (locked && !wasLocked) dismissKeyboard()
+        inputs.getValue("app").syncValue(ui.draft.appName)
+        inputs.getValue("count").syncValue(ui.draft.count)
+        inputs.getValue("min").syncValue(ui.draft.minSeconds)
+        inputs.getValue("max").syncValue(ui.draft.maxSeconds)
+        inputs.getValue("like").syncValue(ui.draft.likePercent)
+        inputs.values.forEach { it.isEnabled = !locked }
+        val appError = ui.errors["app"] != null
+        if (appHasError != appError) {
+            appHasError = appError
+            appField.background = context.rounded(palette.field, 10, palette.error.takeIf { appError })
         }
-        if (ui.draft.randomLike) {
-            Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("点赞概率", color = palette.muted, fontSize = 12.sp)
-                PlainInput(
-                    ui.draft.likePercent, { model.edit("like", it) }, inputsLocked, Modifier.width(94.dp).height(44.dp),
-                    unit = "%", numeric = true, placeholder = "概率", onBlur = { model.touched("like") },
-                )
-            }
-            FieldError(ui.errors["like"])
+        for ((field, label) in errors) {
+            val error = if (field == "app") ui.errors[field] ?: ui.appLoadError else ui.errors[field]
+            label.show(error != null && (field != "like" || ui.draft.randomLike))
+            label.showText(error.orEmpty())
         }
-        HorizontalDivider(color = palette.line)
-        Text("运行权限", color = palette.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp, bottom = 5.dp))
-        PermissionRow("无障碍服务", if (ui.permissions.accessibility) "已开启" else "未开启", ui.permissions.accessibility) { onPermission(PermissionKind.ACCESSIBILITY) }
-        PermissionRow("悬浮窗", if (ui.permissions.overlay) "已授权" else "未授权", ui.permissions.overlay) { onPermission(PermissionKind.OVERLAY) }
+        val selected = ui.match.selected
+        matchRow.show(ui.draft.appName.isNotBlank() && (selected != null || ui.appLoading || ui.match.candidates.size > 1))
+        matchIcon.show(selected != null)
+        if (selected != null) matchIcon.bind(selected)
+        matchLabel.showText(selected?.label ?: if (ui.appLoading) "正在查找应用" else "找到 ${ui.match.candidates.size} 个应用")
+        matchLabel.setTextColor(if (ui.appLoading && selected == null) palette.muted else palette.ink)
+        matchStatus.show(selected != null)
+        matchAction.show(ui.match.candidates.size > 1 && !locked && !ui.appLoading)
+        matchAction.showText(if (selected == null) "选择" else "更换")
+        syncingLike = true
+        try { likeSwitch.isChecked = ui.draft.randomLike } finally { syncingLike = false }
+        likeSwitch.isEnabled = !locked
+        likeRow.show(ui.draft.randomLike)
+
+        accessibility.render(ui.permissions.accessibility)
+        overlay.render(ui.permissions.overlay)
         val paused = ui.run.status == RunStatus.PAUSED
-        ui.message?.let {
-            Text(
-                it, color = palette.error, fontSize = 12.sp,
-                fontWeight = if (paused && it == "任务已暂停") FontWeight.Bold else FontWeight.Normal,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-        }
-        if (paused && ui.run.pauseReason != GESTURE_RECOVERY_GUIDE) {
-            Text(
-                buildAnnotatedString {
-                    append("请切到要操作的应用，点击悬浮窗")
-                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("“继续”") }
-                    append("。")
-                },
-                color = palette.ink, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp),
-            )
-        }
-        Spacer(Modifier.height(14.dp))
-        if (ui.run.locked) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (!paused) {
-                    ControlButton(
-                        "暂停", { focus.clearFocus(); onPause() }, Modifier.weight(1f),
-                        icon = R.drawable.ic_pause,
-                        background = palette.accent, foreground = MaterialTheme.colorScheme.onPrimary,
-                    )
+        message.show(ui.message != null)
+        message.showText(ui.message.orEmpty())
+        message.setTypeface(null, if (paused && ui.message == "任务已暂停") Typeface.BOLD else Typeface.NORMAL)
+        continueHint.show(paused && ui.run.pauseReason != GESTURE_RECOVERY_GUIDE)
+        primary.show(!ui.run.locked)
+        controls.show(ui.run.locked)
+        lockedHint.show(ui.run.locked)
+        pause.show(!paused)
+        pause.render("暂停", palette.accent, palette.background, R.drawable.ic_pause)
+        stop.render("关闭", palette.field, palette.ink, R.drawable.ic_stop)
+        val grant = !ui.permissions.granted
+        primary.render(ui.primaryLabel, if (grant) palette.field else palette.accent,
+            if (grant) palette.ink else palette.background, enabled = ui.ready && (grant || ui.permissions.connected))
+        syncPicker(ui)
+        if (ui.ready) {
+            restoredFocus?.let { saved ->
+                if (!locked) inputs[saved.getString("field")]?.let { edit ->
+                    edit.requestFocus()
+                    edit.setSelection(saved.getInt("start").coerceIn(0, edit.length()), saved.getInt("end").coerceIn(0, edit.length()))
                 }
-                ControlButton("关闭", model::stop, Modifier.weight(1f), R.drawable.ic_stop, background = palette.field, foreground = palette.ink)
             }
-            Text("本次参数已锁定，关闭后可修改", color = palette.muted, fontSize = 11.sp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 13.dp))
+            restoredFocus = null
+        }
+    }
+
+    fun saveEditingState(outState: Bundle) {
+        inputs.entries.firstOrNull { it.value.hasFocus() }?.let { (field, input) ->
+            outState.putBundle("native_focus", Bundle().apply {
+                putString("field", field)
+                putInt("start", input.selectionStart)
+                putInt("end", input.selectionEnd)
+            })
+        }
+    }
+
+    fun restoreEditingState(saved: Bundle?) { restoredFocus = saved?.getBundle("native_focus") }
+
+    private fun syncPicker(ui: MainUiState) {
+        if (ui.picker && ui.ready && !ui.run.locked && isAttachedToWindow) {
+            val dialog = picker ?: AppPickerDialog(context, scope, actions.loadIcon, actions.selectApp, actions.closePicker).also {
+                picker = it
+            }
+            dialog.updateApps(ui.match.candidates)
+            if (!dialog.isShowing) dialog.show()
         } else {
-            val grant = !ui.permissions.granted
-            ControlButton(
-                ui.primaryLabel,
-                onClick = {
-                    focus.clearFocus()
-                    keyboard?.hide()
-                    if (grant) onAllPermissions() else onStart()
-                },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = ui.ready && (grant || ui.permissions.connected),
-                background = if (grant) palette.field else palette.accent,
-                foreground = if (grant) palette.ink else MaterialTheme.colorScheme.onPrimary,
-            )
+            picker?.closeFromState()
+            picker = null
         }
-        Spacer(Modifier.height(24.dp))
     }
-    if (ui.picker) AppPicker(ui.match.candidates, model)
-}
 
-@Composable
-private fun SettingRow(label: String, content: @Composable RowScope.() -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 62.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, color = LocalAppPalette.current.ink, fontSize = 14.sp)
-        content()
+    fun dismissKeyboard() {
+        column.requestFocus()
+        context.getSystemService(InputMethodManager::class.java)?.hideSoftInputFromWindow(windowToken, 0)
     }
-}
 
-@Composable
-private fun PlainInput(
-    value: String, change: (String) -> Unit, readOnly: Boolean, modifier: Modifier,
-    unit: String? = null, numeric: Boolean = false, placeholder: String = "", isError: Boolean = false, onBlur: () -> Unit,
-) {
-    val palette = LocalAppPalette.current
-    val shape = RoundedCornerShape(10.dp)
-    Row(
-        modifier.clip(shape).background(palette.field)
-            .then(if (isError) Modifier.border(1.dp, palette.error, shape) else Modifier)
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        InputText(
-            value, change, readOnly, Modifier.weight(1f), placeholder, onBlur,
-            numeric = numeric, centered = false,
-            fontSize = if (numeric) 17.sp else 16.sp, placeholderSize = if (numeric) 14.sp else 16.sp,
-        )
-        if (unit != null) Text(unit, color = palette.muted, fontSize = 12.sp)
-    }
-}
-
-@Composable
-private fun InputText(
-    value: String, change: (String) -> Unit, readOnly: Boolean, modifier: Modifier,
-    placeholder: String, onBlur: () -> Unit,
-    numeric: Boolean = true, centered: Boolean = true,
-    fontSize: TextUnit = 16.sp, placeholderSize: TextUnit = 12.sp,
-) {
-    val palette = LocalAppPalette.current
-    val focus = LocalFocusManager.current
-    BasicTextField(
-        value, change, modifier.onFocusChanged { if (!it.isFocused) onBlur() },
-        readOnly = readOnly, singleLine = true,
-        textStyle = TextStyle(color = palette.ink, fontSize = fontSize, fontWeight = FontWeight.Medium,
-            textAlign = if (centered) TextAlign.Center else TextAlign.Unspecified),
-        cursorBrush = SolidColor(palette.accent),
-        keyboardOptions = KeyboardOptions(keyboardType = if (numeric) KeyboardType.Number else KeyboardType.Text, imeAction = ImeAction.Done),
-        keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }),
-        decorationBox = { inner ->
-            Box(
-                if (centered) Modifier.fillMaxWidth() else Modifier,
-                contentAlignment = if (centered) Alignment.Center else Alignment.CenterStart,
-            ) {
-                if (value.isEmpty() && placeholder.isNotEmpty()) Text(placeholder, color = palette.muted, fontSize = placeholderSize,
-                    maxLines = 1, overflow = if (centered) TextOverflow.Clip else TextOverflow.Ellipsis)
-                inner()
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downX = event.rawX
+                downY = event.rawY
+                downScroll = scrollY
+                dismissEligible = !hitsInteractiveChild(this, event.rawX.toInt(), event.rawY.toInt())
             }
-        },
-    )
-}
-
-@Composable
-private fun FieldError(value: String?) {
-    if (value != null) Text(value, color = LocalAppPalette.current.error, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp, bottom = 9.dp))
-}
-
-@Composable
-private fun PermissionRow(label: String, status: String, granted: Boolean, open: () -> Unit) {
-    val palette = LocalAppPalette.current
-    Row(Modifier.fillMaxWidth().heightIn(min = 46.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = palette.ink, fontSize = 12.sp, modifier = Modifier.weight(1f))
-        Text(status, color = if (granted) palette.accent else palette.error, fontSize = 11.sp)
-        Spacer(Modifier.width(8.dp))
-        TextButton(onClick = open) { Text(if (granted) "管理" else if (label == "悬浮窗") "去授权" else "去开启", fontSize = 14.sp) }
+            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_CANCEL -> dismissEligible = false
+            MotionEvent.ACTION_MOVE -> if (hypot(event.rawX - downX, event.rawY - downY) > touchSlop) dismissEligible = false
+        }
+        // Record the DOWN hit before EditText can scroll itself or resize the window for the IME.
+        val dismiss = event.actionMasked == MotionEvent.ACTION_UP && dismissEligible &&
+            event.pointerCount == 1 && scrollY == downScroll &&
+            hypot(event.rawX - downX, event.rawY - downY) <= touchSlop
+        val handled = super.dispatchTouchEvent(event)
+        if (dismiss) dismissKeyboard()
+        if (event.actionMasked == MotionEvent.ACTION_UP) dismissEligible = false
+        return handled
     }
-}
 
-@Composable
-private fun InstalledIcon(app: TargetApp, model: MainViewModel, modifier: Modifier) {
-    val bitmap by produceState<ImageBitmap?>(null, app.component) {
-        value = model.container.resolver.icon(app)?.asImageBitmap()
+    private fun hitsInteractiveChild(parent: ViewGroup, x: Int, y: Int): Boolean {
+        val bounds = Rect()
+        for (index in parent.childCount - 1 downTo 0) {
+            val view = parent.getChildAt(index)
+            if (view.visibility != VISIBLE || !view.getGlobalVisibleRect(bounds) || !bounds.contains(x, y)) continue
+            if (view is DraftInput || view.isClickable || view.isLongClickable) return true
+            if (view is ViewGroup && hitsInteractiveChild(view, x, y)) return true
+        }
+        return false
     }
-    val image = bitmap
-    if (image != null) Image(image, null, modifier.clip(RoundedCornerShape(5.dp)))
-    else Box(modifier.clip(RoundedCornerShape(5.dp)).background(LocalAppPalette.current.field), contentAlignment = Alignment.Center) {
-        Text(app.label.take(1), color = LocalAppPalette.current.ink, fontSize = 12.sp)
-    }
-}
 
-@Composable
-private fun AppPicker(apps: List<TargetApp>, model: MainViewModel) {
-    val palette = LocalAppPalette.current
-    AlertDialog(
-        onDismissRequest = model::closePicker,
-        title = { Text("选择目标应用") },
-        text = {
-            LazyColumn(Modifier.heightIn(max = 400.dp)) {
-                items(apps, key = { it.component }) { app ->
-                    Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { model.selectApp(app) }.padding(vertical = 12.dp, horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        InstalledIcon(app, model, Modifier.size(28.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(app.label, color = palette.ink)
-                            Text(app.packageName, fontSize = 11.sp, color = palette.muted)
-                            if (apps.count { it.packageName == app.packageName } > 1) Text(app.component.substringAfterLast('.'), fontSize = 11.sp, color = palette.muted)
-                        }
-                    }
-                }
+    override fun onAttachedToWindow() { super.onAttachedToWindow(); current?.let(::syncPicker) }
+
+    override fun onDetachedFromWindow() {
+        picker?.closeFromState()
+        picker = null
+        super.onDetachedFromWindow()
+    }
+
+    fun dispose() {
+        picker?.closeFromState()
+        picker = null
+        scope.cancel()
+    }
+
+    private fun add(view: View, top: Int = 0, bottom: Int = 0, height: Int = -2) {
+        column.addView(view, LinearLayout.LayoutParams(-1, if (height < 0) height else context.dp(height)).apply {
+            topMargin = context.dp(top); bottomMargin = context.dp(bottom)
+        })
+    }
+
+    private fun addSpace(height: Int) = add(View(context), height = height)
+    private fun divider() = add(View(context).apply { setBackgroundColor(palette.line) }, height = 1)
+
+    private fun addError(field: String) {
+        val error = context.label("", 11f, palette.error).apply { tag = "error_$field" }
+        errors[field] = error
+        add(error, top = 3, bottom = 9)
+    }
+
+    private fun input(field: String, viewId: Int, description: String, numeric: Boolean, centered: Boolean,
+        placeholder: String, size: Float, placeholderSize: Float): DraftInput =
+        DraftInput(context, numeric, centered, placeholder, size, placeholderSize,
+            when (field) { "app" -> 60; "count" -> 8; "like" -> 4; else -> 6 },
+            { actions.edit(field, it) }, { actions.touched(if (field == "min" || field == "max") "time" else field) },
+            ::dismissKeyboard).also {
+            it.id = viewId
+            it.contentDescription = description
+            inputs[field] = it
+        }
+
+    private fun plainInput(field: String, viewId: Int, description: String, numeric: Boolean,
+        placeholder: String, unit: String?, height: Int): LinearLayout = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        minimumHeight = context.dp(height)
+        background = context.rounded(palette.field, 10)
+        setPadding(context.dp(12), 0, context.dp(12), 0)
+        val edit = input(field, viewId, description, numeric, false, placeholder, if (numeric) 17f else 16f, if (numeric) 14f else 16f)
+        addView(edit, LinearLayout.LayoutParams(0, -1, 1f))
+        if (unit != null) addView(context.label(unit, 12f, palette.muted), LinearLayout.LayoutParams(-2, -2).apply {
+            marginStart = context.dp(6)
+        })
+        isClickable = true
+        setOnClickListener {
+            if (edit.isEnabled) {
+                edit.requestFocus()
+                context.getSystemService(InputMethodManager::class.java)?.showSoftInput(edit, InputMethodManager.SHOW_IMPLICIT)
             }
-        },
-        confirmButton = { TextButton(onClick = model::closePicker) { Text("取消") } },
-    )
+        }
+    }
+
+    private fun settingRow(label: String, control: View, width: Int = 150, height: Int = 44) =
+        LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = context.dp(62)
+            addView(context.label(label, 14f, palette.ink), LinearLayout.LayoutParams(0, -2, 1f).apply {
+                marginEnd = context.dp(8)
+            })
+            addView(control, LinearLayout.LayoutParams(context.dp(width), context.dp(height)))
+        }
+
+    private fun textButton(text: String, clicked: () -> Unit) = context.label(text, 14f, palette.accent, true).apply {
+        gravity = Gravity.CENTER
+        minWidth = context.dp(64)
+        minHeight = context.dp(48)
+        setPadding(context.dp(12), 0, context.dp(12), 0)
+        isClickable = true
+        isFocusable = true
+        ripple((palette.accent and 0x00FFFFFF) or 0x22000000, 24)
+        setOnClickListener { clicked() }
+    }
+
+    private inner class PermissionRow(label: String, private val kind: PermissionKind, viewId: Int) {
+        val row = LinearLayout(context)
+        private val status = context.label("", 11f, palette.error)
+        private val button = textButton("") { actions.permission(kind) }
+        init {
+            row.orientation = LinearLayout.HORIZONTAL
+            row.gravity = Gravity.CENTER_VERTICAL
+            row.minimumHeight = context.dp(46)
+            row.addView(context.label(label, 12f, palette.ink), LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(status, LinearLayout.LayoutParams(-2, -2).apply { marginEnd = context.dp(8) })
+            button.id = viewId
+            row.addView(button, LinearLayout.LayoutParams(-2, context.dp(48)))
+        }
+        fun render(granted: Boolean) {
+            status.showText(if (kind == PermissionKind.ACCESSIBILITY) {
+                if (granted) "已开启" else "未开启"
+            } else if (granted) "已授权" else "未授权")
+            status.setTextColor(if (granted) palette.accent else palette.error)
+            button.showText(if (granted) "管理" else if (kind == PermissionKind.OVERLAY) "去授权" else "去开启")
+        }
+    }
 }

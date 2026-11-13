@@ -1,5 +1,5 @@
 // AGP 9 supplies the Android Kotlin integration. Keep its Kotlin toolchain
-// aligned with the Compose compiler without applying a second Android plugin.
+// aligned with the version catalog without applying a second Android plugin.
 buildscript {
     repositories {
         google()
@@ -12,5 +12,4 @@ buildscript {
 
 plugins {
     alias(libs.plugins.android.application) apply false
-    alias(libs.plugins.kotlin.compose) apply false
 }

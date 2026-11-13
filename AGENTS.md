@@ -4,8 +4,8 @@
 
 ## 项目与代码职责
 
-- 本项目是单 `app` 模块的 Kotlin / Jetpack Compose Android 应用，功能与使用流程见 `README.md`。
-- 下述代码包目录位于 `app/src/main/java/com/shortvideo/autoswipe/`，单元测试位于 `app/src/test/java/com/shortvideo/autoswipe/domain/`。
+- 本项目是单 `app` 模块的 Kotlin / Android 原生 View 应用，功能与使用流程见 `README.md`。
+- 下述代码包目录位于 `app/src/main/java/com/shortvideo/autoswipe/`，单元测试位于 `app/src/test/java/com/shortvideo/autoswipe/domain/`，原生界面回归测试位于同级 `ui/`、`overlay/` 目录。
 - `domain/` 保存任务状态机、前台判断与手势规划，保持不依赖 Android 框架；系统能力通过 `AutomationPort` 接入。
 - `accessibility/` 执行系统手势和窗口检查，`platform/` 负责服务桥接、权限与屏幕几何；系统相关实现放在这些目录。
 - `ui/` 和 `overlay/` 共用 `AppContainer.engine` 控制任务，保持单一状态来源；设置持久化由 `data/SettingsRepository.kt` 负责。
@@ -44,6 +44,7 @@
 
 - 修复任务逻辑缺陷时，在现有 JUnit Jupiter 测试中补充复现用例；协程测试使用 `kotlinx-coroutines-test` 的虚拟时间。
 - 交付代码、资源或构建配置改动前，执行上述完整检查；纯文档改动核对内容、路径和格式即可。
+- 原生 View 回归使用 Robolectric 与 JUnit 4（通过 JUnit Vintage 接入同一测试任务），任务逻辑继续使用 JUnit Jupiter。新 UI 不引入 Compose；保留输入组合状态、焦点与控件复用。悬浮窗先为控制按钮预留高度，再让长提示滚动。
 - 权限、悬浮窗和实际手势的改动还需真机或模拟器验证；没有设备时，明确记录未验证项。
 - 本地缺少 `signing.properties` 时，Gradle 可以生成带 `-unsigned` 后缀的 Release APK；CI 的签名步骤需要配置好的 `SIGNING_CONFIG` Secret。按当前任务要求区分未签名构建与可交付的签名包。
 - 发布新版本时递增 `versionCode`，使标签与 `v<versionName>` 一致；沿用现有应用签名，避免更换密钥导致已安装版本无法覆盖升级。发布产物还需通过 CI 的签名、对齐和许可证校验。

@@ -1,53 +1,61 @@
 package com.shortvideo.autoswipe.ui
 
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.graphics.Color
+import android.content.Context
+import android.content.res.ColorStateList
+import android.content.res.Configuration
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
+import android.util.TypedValue
+import android.view.View
+import android.widget.TextView
+import kotlin.math.roundToInt
 
 data class AppPalette(
-    val background: Color,
-    val ink: Color,
-    val muted: Color,
-    val field: Color,
-    val line: Color,
-    val accent: Color,
-    val error: Color,
+    val background: Int, val ink: Int, val muted: Int, val field: Int,
+    val line: Int, val accent: Int, val error: Int,
 )
 
-private val LightPalette = AppPalette(
-    Color.White, Color(0xFF24372F), Color(0xFF748179), Color(0xFFF3F5F2),
-    Color(0xFFEDF0EC), Color(0xFF267D5B), Color(0xFF985A52),
-)
-private val DarkPalette = AppPalette(
-    Color(0xFF161616), Color(0xFFF2F2F2), Color(0xFFB8B8B8), Color(0xFF262626),
-    Color(0xFF373737), Color(0xFF80D6AB), Color(0xFFEBAAA0),
-)
-val LocalAppPalette = staticCompositionLocalOf { LightPalette }
+fun Context.appPalette(): AppPalette = if (
+    resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+) {
+    AppPalette(0xFF161616.toInt(), 0xFFF2F2F2.toInt(), 0xFFB8B8B8.toInt(), 0xFF262626.toInt(),
+        0xFF373737.toInt(), 0xFF80D6AB.toInt(), 0xFFEBAAA0.toInt())
+} else {
+    AppPalette(Color.WHITE, 0xFF24372F.toInt(), 0xFF748179.toInt(), 0xFFF3F5F2.toInt(),
+        0xFFEDF0EC.toInt(), 0xFF267D5B.toInt(), 0xFF985A52.toInt())
+}
 
-@Composable
-fun AutoSwipeTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
-    val palette = if (dark) DarkPalette else LightPalette
-    val scheme = if (dark) darkColorScheme(
-        // Keep Material dialogs and switch surfaces neutral, like the custom form fields.
-        primary = palette.accent, background = palette.background, surface = palette.background,
-        onSurface = palette.ink, onBackground = palette.ink,
-        onPrimary = palette.background, onSurfaceVariant = palette.muted,
-        surfaceVariant = palette.field, surfaceTint = Color.Transparent,
-        surfaceContainerLow = palette.field, surfaceContainer = palette.field,
-        surfaceContainerHigh = palette.field, surfaceContainerHighest = palette.field,
-        outline = Color(0xFF858585), outlineVariant = palette.line,
-        error = palette.error,
-    ) else lightColorScheme(
-        primary = palette.accent, background = palette.background, surface = palette.background,
-        onPrimary = Color.White, onSurface = palette.ink, onBackground = palette.ink,
-    )
-    CompositionLocalProvider(LocalAppPalette provides palette) {
-        MaterialTheme(colorScheme = scheme, content = content)
-    }
+internal fun Context.dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
+internal fun Context.sp(value: Float): Int =
+    TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, value, resources.displayMetrics).roundToInt()
+
+internal fun Context.rounded(color: Int, radius: Int, stroke: Int? = null) = GradientDrawable().apply {
+    setColor(color)
+    cornerRadius = dp(radius).toFloat()
+    if (stroke != null) setStroke(dp(1), stroke)
+}
+
+internal fun View.ripple(color: Int, radius: Int) {
+    foreground = RippleDrawable(ColorStateList.valueOf(color), null, context.rounded(Color.WHITE, radius))
+}
+
+internal fun Context.label(value: CharSequence, size: Float, color: Int, medium: Boolean = false,
+    lineHeight: Float = size * 1.5f) = TextView(this).apply {
+    text = value
+    setTextSize(TypedValue.COMPLEX_UNIT_SP, size)
+    setTextColor(color)
+    typeface = Typeface.create(if (medium) "sans-serif-medium" else "sans-serif", Typeface.NORMAL)
+    includeFontPadding = false
+    setLineHeight(sp(lineHeight))
+}
+
+internal fun TextView.showText(value: CharSequence) {
+    if (text.toString() != value.toString()) text = value
+}
+
+internal fun View.show(visible: Boolean) {
+    val next = if (visible) View.VISIBLE else View.GONE
+    if (visibility != next) visibility = next
 }

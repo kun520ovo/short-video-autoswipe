@@ -9,30 +9,12 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.ViewGroup
 import android.view.WindowManager
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.ViewCompositionStrategy
-import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.LifecycleRegistry
-import androidx.lifecycle.ViewModelStore
-import androidx.lifecycle.ViewModelStoreOwner
-import androidx.lifecycle.setViewTreeLifecycleOwner
-import androidx.lifecycle.setViewTreeViewModelStoreOwner
-import androidx.savedstate.SavedStateRegistry
-import androidx.savedstate.SavedStateRegistryController
-import androidx.savedstate.SavedStateRegistryOwner
-import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.shortvideo.autoswipe.domain.GesturePlanner
 import com.shortvideo.autoswipe.domain.PixelPoint
 import com.shortvideo.autoswipe.domain.PixelRect
-import com.shortvideo.autoswipe.model.RunState
 import com.shortvideo.autoswipe.model.RunControlAction
+import com.shortvideo.autoswipe.model.RunState
 import com.shortvideo.autoswipe.platform.ScreenGeometry
-import com.shortvideo.autoswipe.ui.AutoSwipeTheme
 import com.shortvideo.autoswipe.ui.OverlayContent
 import kotlin.math.ceil
 import kotlin.math.roundToInt
@@ -47,12 +29,10 @@ class OverlayWindow(
 ) {
     private val manager = requireNotNull(context.getSystemService(WindowManager::class.java))
     private var host: DragHost? = null
-    private var compose: ComposeView? = null
-    private var owner: WindowOwner? = null
+    private var content: OverlayContent? = null
     private var params: WindowManager.LayoutParams? = null
-    private var model by mutableStateOf(RunState())
-    private var collapsed by mutableStateOf(false)
-    private var maxHeightDp by mutableStateOf(1f)
+    private var model = RunState()
+    private var collapsed = false
     private var preferredPositionDp: PixelPoint? = null
     private var dragOrigin = PixelPoint(0f, 0f)
     private val touching = MutableStateFlow(false)
@@ -81,6 +61,7 @@ class OverlayWindow(
             return
         }
         if (host == null && !create()) return
+        content?.render(model, collapsed)
         reposition()
     }
 
@@ -95,17 +76,23 @@ class OverlayWindow(
     suspend fun awaitTouchRelease() { touching.first { !it } }
 
     private fun create(): Boolean {
-        val lifecycle = WindowOwner()
         val frame = DragHost(context, ::beginDrag, ::moveDrag) { touching.value = it }
-        val content = ComposeView(context)
-        frame.setViewTreeLifecycleOwner(lifecycle)
-        frame.setViewTreeViewModelStoreOwner(lifecycle)
-        frame.setViewTreeSavedStateRegistryOwner(lifecycle)
-        content.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnLifecycleDestroyed(lifecycle))
-        frame.addView(content, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        owner = lifecycle
+        val view = OverlayContent(context,
+            onCollapse = {
+                frame.handles.clear()
+                frame.scrollRegion.setEmpty()
+                collapsed = !collapsed
+                content?.render(model, collapsed)
+                reposition()
+            },
+            onAction = onAction,
+            onHandle = { key, bounds ->
+                if (key == "scroll") frame.scrollRegion.set(bounds) else frame.handles[key] = bounds
+            },
+        )
+        frame.addView(view, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         host = frame
-        compose = content
+        content = view
         params = WindowManager.LayoutParams(
             desiredWidth(), WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -122,26 +109,10 @@ class OverlayWindow(
                 layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
         }
-        content.setContent {
-            AutoSwipeTheme {
-                OverlayContent(
-                    state = model,
-                    collapsed = collapsed,
-                    maxHeight = maxHeightDp.dp,
-                    onCollapse = {
-                        frame.handles.clear()
-                        collapsed = !collapsed
-                        reposition()
-                    },
-                    onAction = onAction,
-                    onHandle = { key, rect -> frame.handles[key] = rect },
-                )
-            }
-        }
+        view.render(model, collapsed)
         frame.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> reposition() }
         return try {
             reposition()
-            lifecycle.resume()
             manager.addView(frame, requireNotNull(params))
             true
         } catch (_: RuntimeException) {
@@ -171,7 +142,7 @@ class OverlayWindow(
         val bounds = geometry.usableBounds()
         val inset = 6 * density
         val usable = PixelRect(bounds.left + inset, bounds.top + inset, bounds.right - inset, bounds.bottom - inset)
-        maxHeightDp = (usable.height / density).coerceAtLeast(1f)
+        content?.maximumHeight = usable.height.roundToInt().coerceAtLeast(1)
         val width = desiredWidth()
         val height = view.height.takeIf { it > 0 } ?: ((if (collapsed) 44 else 170) * density).roundToInt()
         val preferred = preferredPositionDp?.let { PixelPoint(it.x * density, it.y * density) }
@@ -212,39 +183,13 @@ class OverlayWindow(
         val view = host
         host = null
         view?.handles?.clear()
+        view?.scrollRegion?.setEmpty()
         touching.value = false
         if (view?.isAttachedToWindow == true) runCatching { manager.removeViewImmediate(view) }
-        compose?.disposeComposition()
-        compose = null
-        owner?.destroy()
-        owner = null
+        content = null
         params = null
         model = RunState()
         collapsed = false
         preferredPositionDp = null
-    }
-}
-
-private class WindowOwner : LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
-    private val registry = LifecycleRegistry(this)
-    private val controller = SavedStateRegistryController.create(this)
-    override val lifecycle: Lifecycle get() = registry
-    override val viewModelStore = ViewModelStore()
-    override val savedStateRegistry: SavedStateRegistry get() = controller.savedStateRegistry
-
-    init {
-        controller.performAttach()
-        controller.performRestore(null)
-        registry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
-    }
-
-    fun resume() {
-        registry.handleLifecycleEvent(Lifecycle.Event.ON_START)
-        registry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
-    }
-
-    fun destroy() {
-        registry.currentState = Lifecycle.State.DESTROYED
-        viewModelStore.clear()
     }
 }
