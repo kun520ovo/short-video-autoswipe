@@ -1,10 +1,10 @@
 package com.shortvideo.autoswipe.ui
 
+import android.annotation.SuppressLint
 import android.app.Dialog
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -14,6 +14,7 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListView
+import androidx.core.graphics.drawable.toDrawable
 import com.shortvideo.autoswipe.R
 import com.shortvideo.autoswipe.model.TargetApp
 import kotlinx.coroutines.CancellationException
@@ -21,6 +22,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
+@SuppressLint("ViewConstructor") // Created in code with its owner scope and icon loader.
 internal class InstalledIcon(
     context: Context,
     private val scope: CoroutineScope,
@@ -128,7 +130,7 @@ internal class AppPickerDialog(
             topMargin = context.dp(8)
         })
         setContentView(content)
-        window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        window?.setBackgroundDrawable(Color.TRANSPARENT.toDrawable())
         setOnDismissListener { if (!programmaticDismiss) dismissed() }
     }
 

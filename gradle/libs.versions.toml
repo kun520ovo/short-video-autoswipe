@@ -8,7 +8,7 @@ savedstate = "1.5.0"
 datastore = "1.3.0"
 coroutines = "1.11.0"
 junit = "6.1.3"
-robolectric = "4.17"
+robolectric = "4.18"
 junit4 = "4.13.2"
 
 [libraries]

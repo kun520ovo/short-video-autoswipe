@@ -11,6 +11,7 @@ import android.widget.CompoundButton
 class LikeSwitch(context: Context) : CompoundButton(context) {
     private val palette = context.appPalette()
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val track = RectF()
 
     init {
         buttonDrawable = null
@@ -30,7 +31,7 @@ class LikeSwitch(context: Context) : CompoundButton(context) {
         val scale = resources.displayMetrics.density
         val left = (width - 52 * scale) / 2
         val top = (height - 32 * scale) / 2
-        val track = RectF(left, top, left + 52 * scale, top + 32 * scale)
+        track.set(left, top, left + 52 * scale, top + 32 * scale)
         paint.style = Paint.Style.FILL
         paint.color = if (isChecked) palette.accent else palette.line
         paint.alpha = if (isEnabled) 255 else 110

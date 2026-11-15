@@ -1,5 +1,6 @@
 package com.shortvideo.autoswipe.ui
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Rect
@@ -44,6 +45,7 @@ data class TaskScreenActions(
 )
 
 /** One reusable view tree; the existing ViewModel remains the only source of form/task state. */
+@SuppressLint("ViewConstructor") // MainActivity supplies TaskScreenActions when creating the screen.
 class TaskScreen(context: Context, private val actions: TaskScreenActions) : ScrollView(context) {
     private val palette = context.appPalette()
     private val scope = MainScope()

@@ -26,6 +26,7 @@ class OverlayWindow(
     private val geometry: ScreenGeometry,
     private val onAction: (RunControlAction) -> Unit,
     private val onFailure: (String) -> Unit,
+    private val onGeometryChanged: () -> Unit = {},
 ) {
     private val manager = requireNotNull(context.getSystemService(WindowManager::class.java))
     private var host: DragHost? = null
@@ -114,6 +115,10 @@ class OverlayWindow(
         return try {
             reposition()
             manager.addView(frame, requireNotNull(params))
+            geometry.observeInsets {
+                update(model)
+                onGeometryChanged()
+            }
             true
         } catch (_: RuntimeException) {
             close()
@@ -123,7 +128,7 @@ class OverlayWindow(
     }
 
     private fun desiredWidth(): Int {
-        val available = (geometry.usableBounds().width - 12 * density).coerceAtLeast(100 * density)
+        val available = (availableBounds().width - 12 * density).coerceAtLeast(100 * density)
         if (!collapsed) {
             val fontScale = context.resources.configuration.fontScale.coerceIn(1f, 1.25f)
             return (190 * density * fontScale).roundToInt().coerceAtMost(available.roundToInt())
@@ -139,7 +144,7 @@ class OverlayWindow(
     private fun reposition() {
         val view = host ?: return
         val layout = params ?: return
-        val bounds = geometry.usableBounds()
+        val bounds = availableBounds()
         val inset = 6 * density
         val usable = PixelRect(bounds.left + inset, bounds.top + inset, bounds.right - inset, bounds.bottom - inset)
         content?.maximumHeight = usable.height.roundToInt().coerceAtLeast(1)
@@ -169,7 +174,7 @@ class OverlayWindow(
 
     private fun moveDrag(dx: Float, dy: Float) {
         val view = host ?: return
-        val bounds = geometry.usableBounds()
+        val bounds = availableBounds()
         val margin = 6 * density
         val clamped = GesturePlanner.clampWindow(
             PixelPoint(dragOrigin.x + dx, dragOrigin.y + dy), view.width.toFloat(), view.height.toFloat(),
@@ -186,10 +191,13 @@ class OverlayWindow(
         view?.scrollRegion?.setEmpty()
         touching.value = false
         if (view?.isAttachedToWindow == true) runCatching { manager.removeViewImmediate(view) }
+        geometry.stopObserving()
         content = null
         params = null
         model = RunState()
         collapsed = false
         preferredPositionDp = null
     }
+
+    private fun availableBounds(): PixelRect = geometry.usableBounds() ?: geometry.displayBounds()
 }

@@ -68,6 +68,7 @@ class NativeOverlayWindowTest {
         window.close()
         assertTrue(hosts().isEmpty())
         assertNull(window.currentBounds())
+        assertNoOverlayWindows()
     }
 
     @Test fun newTaskResetsCollapsedAppearanceAndStopRemovesWindow() {
@@ -82,6 +83,7 @@ class NativeOverlayWindowTest {
         assertEquals(View.GONE, fresh.findViewById<View>(R.id.overlay_compact).visibility)
         update(RunState(status = RunStatus.STOPPED))
         assertTrue(hosts().isEmpty())
+        assertNoOverlayWindows()
     }
 
     @Test fun revokingPermissionClosesWindowAndReportsFailure() {
@@ -90,5 +92,14 @@ class NativeOverlayWindowTest {
         update(run)
         assertTrue(hosts().isEmpty())
         assertEquals(listOf("悬浮窗权限已关闭"), failures)
+        assertNoOverlayWindows()
+    }
+
+    private fun assertNoOverlayWindows() {
+        assertTrue(Shadow.extract<ShadowWindowManagerImpl>(manager).views.none {
+            (it.layoutParams as? WindowManager.LayoutParams)?.type in setOf(
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            )
+        })
     }
 }

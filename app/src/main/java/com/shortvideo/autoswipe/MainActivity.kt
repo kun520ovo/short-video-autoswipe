@@ -3,11 +3,11 @@ package com.shortvideo.autoswipe
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Bundle
 import android.widget.FrameLayout
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -115,12 +115,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openRepository() {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(getString(R.string.repository_url))).apply {
+        val intent = Intent(Intent.ACTION_VIEW, getString(R.string.repository_url).toUri()).apply {
             addCategory(Intent.CATEGORY_BROWSABLE)
         }
         // Match web handling locally; OEM browsers need not expose CATEGORY_APP_BROWSER.
         try {
-            val probe = Intent(Intent.ACTION_VIEW, Uri.parse("https://example.org/"))
+            val probe = Intent(Intent.ACTION_VIEW, "https://example.org/".toUri())
                 .addCategory(Intent.CATEGORY_BROWSABLE)
             val browser = packageManager.resolveActivity(probe,
                 PackageManager.MATCH_DEFAULT_ONLY or PackageManager.GET_RESOLVED_FILTER)

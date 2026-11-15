@@ -1,5 +1,6 @@
 package com.shortvideo.autoswipe.ui
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Rect
@@ -13,6 +14,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.core.view.isVisible
 import com.shortvideo.autoswipe.R
 import com.shortvideo.autoswipe.model.RunControlAction
 import com.shortvideo.autoswipe.model.RunStage
@@ -23,6 +25,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 
 /** The foreground service reuses these controls; no UI composition or lifecycle owner is needed. */
+@SuppressLint("ViewConstructor") // Created by OverlayWindow with required control and drag callbacks.
 class OverlayContent(
     context: Context,
     onCollapse: () -> Unit,
@@ -46,6 +49,13 @@ class OverlayContent(
     private var current = RunState()
     private var collapsed = false
     private var logKey: Pair<String?, String?>? = null
+    private val descendantBounds = Rect()
+    // DragHost retains each rectangle, so regions must own separate reusable bounds.
+    private val compactBounds = RectF()
+    private val headerBounds = RectF()
+    private val countBounds = RectF()
+    private val logBounds = RectF()
+    private val scrollBounds = RectF()
 
     var maximumHeight: Int = Int.MAX_VALUE
         set(value) {
@@ -163,23 +173,27 @@ class OverlayContent(
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         super.onLayout(changed, left, top, right, bottom)
-        onHandle("compact", if (collapsed) boundsOf(compact) else RectF())
-        onHandle("header", if (collapsed) RectF() else boundsOf(titleHandle))
-        onHandle("count", if (collapsed) RectF() else boundsOf(counts))
+        updateHandle("compact", if (collapsed) compact else null, compactBounds)
+        updateHandle("header", if (collapsed) null else titleHandle, headerBounds)
+        updateHandle("count", if (collapsed) null else counts, countBounds)
         val canScroll = logScroll.canScrollVertically(1) || logScroll.canScrollVertically(-1)
-        onHandle("log", if (!collapsed && !canScroll) boundsOf(logScroll) else RectF())
-        onHandle("scroll", if (!collapsed && canScroll) boundsOf(logScroll) else RectF())
+        updateHandle("log", if (!collapsed && !canScroll) logScroll else null, logBounds)
+        updateHandle("scroll", if (!collapsed && canScroll) logScroll else null, scrollBounds)
     }
 
-    private fun boundsOf(view: View): RectF {
-        val bounds = Rect()
-        view.getDrawingRect(bounds)
-        offsetDescendantRectToMyCoords(view, bounds)
-        return RectF(bounds)
+    private fun updateHandle(key: String, view: View?, bounds: RectF) {
+        if (view == null) bounds.setEmpty()
+        else {
+            view.getDrawingRect(descendantBounds)
+            offsetDescendantRectToMyCoords(view, descendantBounds)
+            bounds.set(descendantBounds)
+        }
+        onHandle(key, bounds)
     }
 }
 
 /** Measure fixed controls first so a long recovery guide cannot push buttons off screen. */
+@SuppressLint("ViewConstructor") // Assembles existing child views supplied by OverlayContent.
 private class OverlayStack(
     context: Context,
     private val header: View,
@@ -212,7 +226,8 @@ private class OverlayStack(
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         var y = paddingTop
-        for (child in arrayOf(header, count, log)) {
+        for (index in 0 until childCount - 1) {
+            val child = getChildAt(index)
             child.layout(paddingLeft, y, width - paddingRight, y + child.measuredHeight)
             y += child.measuredHeight
         }
@@ -251,15 +266,15 @@ private class CountRow(context: Context) : ViewGroup(context) {
         val unlimited = MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
         count.measure(atMost, unlimited)
         dwell.measure(atMost, unlimited)
-        wrapped = dwell.visibility == VISIBLE && count.measuredWidth + dwell.measuredWidth > width
+        wrapped = dwell.isVisible && count.measuredWidth + dwell.measuredWidth > width
         val height = if (wrapped) count.measuredHeight + context.dp(2) + dwell.measuredHeight
-            else maxOf(count.measuredHeight, if (dwell.visibility == VISIBLE) dwell.measuredHeight else 0)
+            else maxOf(count.measuredHeight, if (dwell.isVisible) dwell.measuredHeight else 0)
         setMeasuredDimension(width, height + paddingBottom)
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         count.layout(0, 0, count.measuredWidth, count.measuredHeight)
-        if (dwell.visibility == VISIBLE) {
+        if (dwell.isVisible) {
             val y = if (wrapped) count.measuredHeight + context.dp(2) else 0
             val x = if (wrapped) 0 else width - dwell.measuredWidth
             dwell.layout(x, y, x + dwell.measuredWidth, y + dwell.measuredHeight)

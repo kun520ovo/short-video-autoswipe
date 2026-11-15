@@ -1,5 +1,6 @@
 package com.shortvideo.autoswipe.overlay
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.RectF
 import android.view.MotionEvent
@@ -11,6 +12,7 @@ import kotlin.math.hypot
  * Use raw screen coordinates because moving a WindowManager window changes
  * view-local coordinates. Intercepting a drag sends CANCEL to a pending click.
  */
+@SuppressLint("ViewConstructor") // OverlayWindow supplies the drag and touch callbacks.
 class DragHost(
     context: Context,
     private val onStart: () -> Unit,

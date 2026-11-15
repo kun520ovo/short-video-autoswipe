@@ -90,6 +90,34 @@ class NativeTaskScreenTest {
         assertEquals("123", screen.findViewById<DraftInput>(R.id.input_count).text.toString())
     }
 
+    @Test fun selectedLongLabelRendersIntactAndEqualUpdatesKeepCompositionAndSelection() {
+        val label = "测".repeat(59) + "\uD83D\uDE80应用"
+        val selected = target.copy(label = label)
+        val state = ready.copy(draft = ready.draft.copy(appName = label, selectedComponent = selected.component),
+            match = AppMatch(listOf(selected), selected))
+        screen.render(state)
+        val input = screen.findViewById<DraftInput>(R.id.input_app)
+        assertEquals(label, input.text.toString())
+        assertEquals(label.length, input.selectionStart)
+        assertTrue(edits.isEmpty())
+        input.requestFocus()
+        input.setSelection(3)
+        requireNotNull(input.onCreateInputConnection(EditorInfo())).setComposingRegion(0, 4)
+        val editable = input.text
+        screen.render(state.copy(message = "状态更新"))
+        assertSame(editable, input.text)
+        assertEquals(3, input.selectionStart)
+        assertEquals(0, BaseInputConnection.getComposingSpanStart(input.text))
+        assertEquals(4, BaseInputConnection.getComposingSpanEnd(input.text))
+    }
+
+    @Test fun manuallyEnteredAppNamesStillRespectTheTypingLimit() {
+        val input = screen.findViewById<DraftInput>(R.id.input_app)
+        input.setText("测".repeat(61))
+        assertEquals("测".repeat(60), input.text.toString())
+        assertEquals(listOf("app" to "测".repeat(60)), edits)
+    }
+
     @Test fun dwellInputsHaveVisibleMeasuredText() {
         for ((id, expected) in listOf(R.id.input_min to "5", R.id.input_max to "10")) {
             val input = screen.findViewById<DraftInput>(id)

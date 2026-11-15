@@ -1,5 +1,6 @@
 package com.shortvideo.autoswipe.ui
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
 import android.view.Gravity
@@ -8,6 +9,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 
 /** Keep the icon and text centered together, with one accessible click target. */
+@SuppressLint("ViewConstructor") // Created and configured through render() in code.
 class ControlButton(context: Context, private val compact: Boolean = false) : LinearLayout(context) {
     private val icon = ImageView(context)
     private val label = context.label("", if (compact) 12f else 16f, Color.WHITE, true,

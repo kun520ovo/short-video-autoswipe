@@ -84,6 +84,7 @@ class SwipeAccessibilityService : AccessibilityService(), AccessibilityBackend {
                 }
             },
             onFailure = { message -> container.scope.launch { container.engine.pause(message) } },
+            onGeometryChanged = container.bridge::changed,
         )
         executor = AndroidGestureExecutor(this, inspector, overlay::currentBounds, overlay::awaitTouchRelease)
         connected = true

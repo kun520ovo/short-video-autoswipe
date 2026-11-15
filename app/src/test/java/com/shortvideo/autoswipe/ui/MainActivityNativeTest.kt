@@ -13,6 +13,7 @@ import com.shortvideo.autoswipe.MainActivity
 import com.shortvideo.autoswipe.R
 import com.shortvideo.autoswipe.appContainer
 import com.shortvideo.autoswipe.model.RunStatus
+import com.shortvideo.autoswipe.model.TargetApp
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -66,6 +67,17 @@ class MainActivityNativeTest {
         assertEquals(RunStatus.IDLE, activity.appContainer.engine.state.value.status)
         controller.pause().stop().start().resume()
         assertEquals(RunStatus.IDLE, activity.appContainer.engine.state.value.status)
+    }
+
+    @Test fun selectingAndRecreatingWithLongApplicationNameKeepsFullLabelAndComponent() {
+        val model = ViewModelProvider(controller.get())[MainViewModel::class.java]
+        val selected = TargetApp("example.long", "example.long/.Main", "测".repeat(61))
+        model.selectApp(selected)
+        await { controller.get().findViewById<DraftInput>(R.id.input_app).text.toString() == selected.label }
+        assertEquals(selected.component, model.uiState.value.draft.selectedComponent)
+        controller.recreate()
+        await { controller.get().findViewById<DraftInput>(R.id.input_app).text.toString() == selected.label }
+        assertEquals(selected.component, model.uiState.value.draft.selectedComponent)
     }
 
     @Test fun titleOpensRepositoryInBrowserWithoutStartingTask() {

@@ -27,7 +27,10 @@ class ScreenInspector(
     private val keyguard = requireNotNull(service.getSystemService(KeyguardManager::class.java))
     private val foreground = ForegroundAppTracker()
     private val density get() = service.resources.displayMetrics.density
-    private data class ForegroundWindow(val packageName: String?, val bounds: PixelRect)
+    private sealed interface ForegroundWindow {
+        data class App(val packageName: String?, val bounds: PixelRect) : ForegroundWindow
+        data object SystemPanel : ForegroundWindow
+    }
 
     fun record(event: AccessibilityEvent) {
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
@@ -46,17 +49,24 @@ class ScreenInspector(
     fun inspect(target: TargetApp): ScreenSnapshot {
         val availability = availability()
         if (availability is SafetyCheck.Blocked) return ScreenSnapshot(availability)
-        val window = foregroundWindow()
-            ?: return ScreenSnapshot(SafetyCheck.Blocked(BlockKind.GEOMETRY, "应用窗口暂时不可用"))
+        val window = when (val foreground = foregroundWindow()) {
+            is ForegroundWindow.App -> foreground
+            ForegroundWindow.SystemPanel -> return ScreenSnapshot(
+                SafetyCheck.Blocked(BlockKind.GEOMETRY, "系统面板遮挡了应用，收起后自动继续"),
+            )
+            null -> return ScreenSnapshot(SafetyCheck.Blocked(BlockKind.GEOMETRY, "应用窗口暂时不可用"))
+        }
         val appCheck = checkForeground(target.packageName, window.packageName)
         if (appCheck is SafetyCheck.Blocked) return ScreenSnapshot(appCheck)
-        val content = GesturePlanner.contentBounds(geometry.usableBounds(), window.bounds, density)
+        val screen = geometry.usableBounds()
+            ?: return ScreenSnapshot(SafetyCheck.Blocked(BlockKind.GEOMETRY, "正在确认屏幕可用区域"))
+        val content = GesturePlanner.contentBounds(screen, window.bounds, density)
             ?: return ScreenSnapshot(SafetyCheck.Blocked(BlockKind.GEOMETRY, "屏幕尺寸暂不可用"))
         return ScreenSnapshot(SafetyCheck.Ready, content)
     }
 
     fun foregroundTarget(): TargetApp? {
-        val packageName = foregroundWindow()?.packageName ?: return null
+        val packageName = (foregroundWindow() as? ForegroundWindow.App)?.packageName ?: return null
         if (packageName == service.packageName) return null
         return try {
             val packages = service.packageManager
@@ -75,14 +85,20 @@ class ScreenInspector(
     private fun foregroundWindow(): ForegroundWindow? {
         val windows = try { service.windows } catch (_: RuntimeException) { return null }
         return try {
-            // Keyboard and overlay windows never replace the foreground application.
+            // A focused/active system panel receives touches before the app underneath.
+            // Our non-focusable controls, idle system bars and accessibility overlays do not.
+            if (windows.any {
+                it.type == AccessibilityWindowInfo.TYPE_SYSTEM && (it.isFocused || it.isActive) &&
+                    rootPackage(it) != service.packageName
+            }) return ForegroundWindow.SystemPanel
+            // Keyboard and accessibility overlay windows do not replace the application.
             val appWindows = windows.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
             val focused = appWindows.firstOrNull { it.isFocused }
                 ?: appWindows.firstOrNull { it.isActive }
                 ?: appWindows.firstOrNull()
                 ?: return null
             val bounds = Rect().also { focused.getBoundsInScreen(it) }
-            ForegroundWindow(
+            ForegroundWindow.App(
                 foreground.resolve(focused.id, rootPackage(focused)),
                 PixelRect(bounds.left.toFloat(), bounds.top.toFloat(), bounds.right.toFloat(), bounds.bottom.toFloat()),
             )

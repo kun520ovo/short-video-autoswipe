@@ -1,5 +1,6 @@
 package com.shortvideo.autoswipe.ui
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Typeface
@@ -14,6 +15,7 @@ import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import androidx.core.widget.doAfterTextChanged
 
+@SuppressLint("ViewConstructor") // TaskScreen supplies the field limits and input callbacks.
 class DraftInput(
     context: Context,
     numeric: Boolean,
@@ -55,7 +57,12 @@ class DraftInput(
         textCursorDrawable = textCursorDrawable?.mutate()?.apply {
             setTintList(ColorStateList.valueOf(palette.accent))
         }
-        filters = arrayOf(InputFilter.LengthFilter(limit))
+        val inputLimit = InputFilter.LengthFilter(limit)
+        // System app labels may exceed the typing limit. Keep a selected label intact
+        // so the rendered value, persisted draft and selected component stay consistent.
+        filters = arrayOf(InputFilter { source, start, end, dest, dstart, dend ->
+            if (synchronizing) null else inputLimit.filter(source, start, end, dest, dstart, dend)
+        })
         // The ViewModel/DataStore owns the draft; view restoration must not overwrite it.
         isSaveEnabled = false
         setOnFocusChangeListener { _, focused -> if (!focused) blurred() }
@@ -93,8 +100,9 @@ class DraftInput(
         synchronizing = true
         try {
             text?.replace(0, text?.length ?: 0, value)
-            if (hasFocus()) setSelection(start.coerceIn(0, value.length), end.coerceIn(0, value.length))
-            else setSelection(value.length)
+            val actualLength = length()
+            if (hasFocus()) setSelection(start.coerceIn(0, actualLength), end.coerceIn(0, actualLength))
+            else setSelection(actualLength)
         } finally {
             synchronizing = false
         }
