@@ -137,7 +137,7 @@ class MainViewModel(val container: AppContainer) : ViewModel() {
         if (container.engine.state.value.locked || !loaded.value) return
         draft.value = when (field) {
             "app" -> draft.value.copy(appName = value.take(60), selectedComponent = null)
-            "count" -> draft.value.copy(count = value.take(8))
+            "count" -> draft.value.copy(count = value.take(9))
             "min" -> draft.value.copy(minSeconds = value.take(6))
             "max" -> draft.value.copy(maxSeconds = value.take(6))
             "like" -> draft.value.copy(likePercent = value.take(4))

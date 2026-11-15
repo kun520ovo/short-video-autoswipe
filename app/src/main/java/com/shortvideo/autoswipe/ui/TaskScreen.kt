@@ -336,7 +336,7 @@ class TaskScreen(context: Context, private val actions: TaskScreenActions) : Scr
     private fun input(field: String, viewId: Int, description: String, numeric: Boolean, centered: Boolean,
         placeholder: String, size: Float, placeholderSize: Float): DraftInput =
         DraftInput(context, numeric, centered, placeholder, size, placeholderSize,
-            when (field) { "app" -> 60; "count" -> 8; "like" -> 4; else -> 6 },
+            when (field) { "app" -> 60; "count" -> 9; "like" -> 4; else -> 6 },
             { actions.edit(field, it) }, { actions.touched(if (field == "min" || field == "max") "time" else field) },
             ::dismissKeyboard).also {
             it.id = viewId

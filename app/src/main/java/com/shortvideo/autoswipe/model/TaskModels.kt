@@ -17,7 +17,7 @@ data class TaskConfig(
     val likePercent: Int = TaskDefaults.LIKE_PERCENT,
 ) {
     fun isValid(): Boolean =
-        appName.isNotBlank() && swipeCount in 1..100_000 &&
+        appName.isNotBlank() && swipeCount in 1..999_999_999 &&
             minSeconds in 1..3600 && maxSeconds in minSeconds..3600 &&
             (!randomLike || likePercent in 1..100)
 }
@@ -44,8 +44,8 @@ data class FormDraft(
     fun errors(): Map<String, String> = buildMap {
         if (appName.isBlank()) put("app", "请填写应用名称。")
         val countValue = count.toIntOrNull()
-        if (count.isNotBlank() && (countValue == null || countValue !in 1..100_000)) {
-            put("count", "填写 1–100000 之间的整数")
+        if (count.isNotBlank() && (countValue == null || countValue !in 1..999_999_999)) {
+            put("count", "填写 1–999999999 之间的整数")
         }
         val minimum = minSeconds.toIntOrNull()
         val maximum = maxSeconds.toIntOrNull()
