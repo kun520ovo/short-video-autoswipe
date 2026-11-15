@@ -82,6 +82,8 @@ Android 本地自动滑屏工具：填写手机上的应用名称，设置上滑
 
 依赖版本集中在 [gradle/libs.versions.toml](gradle/libs.versions.toml)。发布版开启 R8 代码压缩、混淆和资源裁剪，压缩 DEX，仅保留 ARM64 原生库及简体中文资源。
 
+GitHub Actions 发布 Release 时，使用 `--generate-notes` 自动生成更新说明。内容根据两个版本之间的合并 PR 等仓库记录生成，并提供完整代码变更的对比链接。
+
 ## 项目结构
 
 | 文件或目录                                               | 中文说明                              |

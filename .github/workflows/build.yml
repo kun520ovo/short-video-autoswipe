@@ -158,7 +158,7 @@ jobs:
           # Use an ASCII filename so GitHub does not strip the Chinese name on upload.
           release_apk="$RUNNER_TEMP/short-video-autoswipe-${APP_VERSION}.apk"
           cp -- "$APK_PATH" "$release_apk"
-          gh release create "$RELEASE_TAG" "$release_apk#$(basename "$APK_PATH")" --repo "$GITHUB_REPOSITORY" --target "$commit" --title "短视频挂机 v${APP_VERSION}" --notes ""
+          gh release create "$RELEASE_TAG" "$release_apk#$(basename "$APK_PATH")" --repo "$GITHUB_REPOSITORY" --target "$commit" --title "短视频挂机 v${APP_VERSION}" --generate-notes
 
       - name: Remove temporary signing files
         if: always()
